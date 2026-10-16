@@ -9,7 +9,7 @@
 @trait_module module PlotCore
 using TraitWorld
 export Positions, npoints, pointx, pointy, ColorSpec, rgba, Plot, draw!, datalimits,
-       Figure, Axis, Lines, Scatter, Canvas, Transform2D, add_lines!, add_scatter!, render_png, newfigure
+       Figure, Axis, Lines, Scatter, Canvas, Transform2D, add_lines!, add_scatter!, render_png, newfigure, recolor!, setcolor!
 
 # --- the traits --------------------------------------------------------------------------------
 
@@ -83,20 +83,21 @@ writepng(c::Canvas, path::String) = @call _cairo_write_png(c.surface, path)::Not
 
 # --- plots: a recipe trait, and the library's two recipes -----------------------------------------
 
-"A recipe: its data limits, and how it draws itself onto a canvas."
+"A recipe: its data limits, how it draws itself onto a canvas, and its colour, which may change shape."
 @trait Plot begin
     datalimits(p::Plot)::NTuple{4,Float64}
     draw!(p::Plot, c::Canvas, t::Transform2D)::Nothing
+    setcolor!(p::Plot, c::Dynamic{ColorSpec})::Nothing
 end
 
 "Lines through points. Its data and colour are kept as dynamic values: any conforming type."
-struct Lines
+mutable struct Lines
     pos::Positions                  # a trait's name in a field: Dynamic{Positions}
     color::ColorSpec                # Dynamic{ColorSpec}
     linewidth::Float64
 end
 "Markers at points."
-struct Scatter
+mutable struct Scatter
     pos::Positions
     color::ColorSpec
     markersize::Float64
@@ -137,6 +138,8 @@ function draw!(p::Scatter, c::Canvas, t::Transform2D)
     circles!(c, xs, ys, colors(p.color, length(xs))::Vector{NTuple{4,Float64}}, p.markersize / 2)
     return nothing
 end
+setcolor!(p::Lines, c::Dynamic{ColorSpec}) = (p.color = c; nothing)
+setcolor!(p::Scatter, c::Dynamic{ColorSpec}) = (p.color = c; nothing)
 @implement Plot Lines
 @implement Plot Scatter
 
@@ -154,6 +157,9 @@ struct Figure
     height::Int
     axis::Axis
 end
+"Give plot `k` another colour, of any conforming type: a symbol, a vector, a user's gradient (one dispatch per change)."
+recolor!(f::Figure, k::Int, c::ColorSpec) = setcolor!(f.axis.plots[k], Dynamic{ColorSpec}(c))
+
 newfigure(width::Int, height::Int, title::String) = Figure(width, height, Axis(Dynamic{Plot}[], title, "", ""))
 
 add_lines!(f::Figure, pos::Positions, color::ColorSpec, linewidth::Float64) =

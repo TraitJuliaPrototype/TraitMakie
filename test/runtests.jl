@@ -21,6 +21,11 @@ TraitMakie.rgba(g::Gradient, i::Int) = (t = (i - 1) / max(g.n - 1, 1); g.from .+
     @test isfile(p2) && filesize(p2) > 1000
     # limits through the dynamic values
     @test TraitMakie.PlotCore.datalimits(f2.axis.plots[1]) == (1.0, 20.0, 1.0, 400.0)
+    # the colour changes shape on an existing plot (row 6): a symbol, a vector, the user's type, a symbol
+    recolor!(f2, 2, [(0.1, 0.2, 0.3, 1.0) for _ in xs])
+    recolor!(f2, 2, :purple)
+    recolor!(f2, 1, Gradient((0.0, 0.0, 0.0, 1.0), (1.0, 1.0, 1.0, 1.0), 20))
+    @test isfile(save(tempname() * ".png", f2))
     # a value that does not conform is refused at the bound, naming it
     @test_throws Exception lines!(f, "not data")
 end

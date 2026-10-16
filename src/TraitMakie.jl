@@ -61,7 +61,7 @@ _cairo_write_png(h, path::String) = (Cairo.write_to_png(h[1], path); nothing)
 
 include("PlotCore.jl")
 using .PlotCore
-export lines, lines!, scatter, scatter!, save, figure, Positions, npoints, pointx, pointy, ColorSpec, rgba, Plot
+export lines, lines!, scatter, scatter!, save, figure, recolor!, Positions, npoints, pointx, pointy, ColorSpec, rgba, Plot
 
 # --- the ordinary interface --------------------------------------------------------------------------
 
@@ -85,6 +85,9 @@ scatter!(fig::PlotCore.Figure, data; color = :black, markersize = 6) =
 lines(args...; title = "", size = (600, 400), kw...) = lines!(figure(; size, title), args...; kw...)
 scatter(args...; title = "", size = (600, 400), kw...) = scatter!(figure(; size, title), args...; kw...)
 
+"Give the figure's plot `k` another colour: any value `ColorSpec` takes, whatever the colour was before."
+recolor!(fig::PlotCore.Figure, k::Integer, color) = (PlotCore.recolor!(fig, Int(k), _color(color)); fig)
+
 "Render the figure into a PNG file."
 save(path::AbstractString, fig::PlotCore.Figure) = (PlotCore.render_png(fig, String(path)); path)
 
@@ -94,6 +97,7 @@ TraitWorld.@workload begin
     f = lines(xs, sin.(xs); title = "workload")
     scatter!(f, xs, cos.(xs); color = [(0.2, 0.4, 0.8, 1.0) for _ in xs])
     lines!(f, [(0.0, 0.0), (1.0, 1.0)]; color = (1.0, 0.0, 0.0))
+    recolor!(f, 2, :red)
     path = tempname() * ".png"
     save(path, f)
     rm(path; force = true)

@@ -54,7 +54,7 @@ The trait design predicts:
 | 3 | invalidations over each load | none in trait-world code, with the filter | PlotCore: 0 in every order, stock and patched; TraitWorld machinery: 285 stock, 14 patched |
 | 4 | cost of a new data type, colour, recipe, from images and from the prompt | tens of ms for a projection | a new data type at the prompt (forwarding): 61–132 ms |
 | 5 | dispatch targets, phases A–G of x15/x16 | tens, all listed; 0–2 per new shape | not yet |
-| 6 | colour shape change: `:red`, then a vector, then `Gradient` | works | not yet |
+| 6 | colour shape change: `:red`, then a vector, then `Gradient` | works | works (`recolor!`): render 20 ms; to a vector 79 ms and to a user's `Gradient` 91 ms at first use (compiling the new shape); back to `:red`/`:blue` 9 ms |
 | 7 | `verify_main` from `main` to drawing; `juliac --trim` | closed; a running binary under 20 MB | not yet |
 | 8 | errors: bad data, a wrong colour result, an undeclared operation in a recipe | at the entry or the conformance, naming the bound | not yet |
 | 9 | run-time cost of dynamic positions: 10⁵-point lines updated 100 times; 50 plots redrawn | within 10% of PlainPlots | not yet |
