@@ -5,59 +5,12 @@ A plotting library written as a trait module (`PlotCore`), with an ordinary laye
 Makie-like interface: `lines(x, y)`, `scatter!(fig, x, y)`, `save(path, fig)`. The second
 demonstrator of the trait world's viability; see README.md for the measurements.
 
-This module is the ordinary one that pairs with the trait module (rule 1). It holds the Cairo
-primitives that `PlotCore` reaches through declared calls (`@call`), and converts arguments such as
+This module is the ordinary one that pairs with the trait module. It converts arguments such as
 `x, y` vectors into one value the trait module's bounds take (note "Types that only convert").
+PlotCore calls Cairo directly (wrapping by facts).
 """
 module TraitMakie
 using TraitWorld
-using Cairo: Cairo
-
-# --- the backend's primitives: ordinary code, reached from PlotCore by declared calls ---------------
-
-_cairo_surface(w::Int, h::Int) = (s = Cairo.CairoARGBSurface(w, h); (s, Cairo.CairoContext(s)))
-_ctx(h) = h[2]
-function _cairo_polyline!(h, xs::Vector{Float64}, ys::Vector{Float64}, col::NTuple{4,Float64}, lw::Float64)
-    c = _ctx(h)
-    isempty(xs) && return nothing
-    Cairo.set_source_rgba(c, col...)
-    Cairo.set_line_width(c, lw)
-    Cairo.move_to(c, xs[1], ys[1])
-    for i in 2:length(xs)
-        Cairo.line_to(c, xs[i], ys[i])
-    end
-    Cairo.stroke(c)
-    return nothing
-end
-function _cairo_circles!(h, xs::Vector{Float64}, ys::Vector{Float64}, cols::Vector{NTuple{4,Float64}}, r::Float64)
-    c = _ctx(h)
-    for i in eachindex(xs)
-        Cairo.set_source_rgba(c, cols[i]...)
-        Cairo.new_sub_path(c)
-        Cairo.arc(c, xs[i], ys[i], r, 0.0, 2pi)
-        Cairo.fill(c)
-    end
-    return nothing
-end
-function _cairo_text!(h, x::Float64, y::Float64, s::String, size::Float64, halign::Symbol)
-    c = _ctx(h)
-    Cairo.set_source_rgba(c, 0.0, 0.0, 0.0, 1.0)
-    Cairo.select_font_face(c, "Sans", Cairo.FONT_SLANT_NORMAL, Cairo.FONT_WEIGHT_NORMAL)
-    Cairo.set_font_size(c, size)
-    ext = Cairo.text_extents(c, s)
-    dx = halign === :center ? -ext[3] / 2 : halign === :right ? -ext[3] : 0.0
-    Cairo.move_to(c, x + dx, y)
-    Cairo.show_text(c, s)
-    return nothing
-end
-function _cairo_fillrect!(h, x::Float64, y::Float64, w::Float64, hh::Float64, col::NTuple{4,Float64})
-    c = _ctx(h)
-    Cairo.set_source_rgba(c, col...)
-    Cairo.rectangle(c, x, y, w, hh)
-    Cairo.fill(c)
-    return nothing
-end
-_cairo_write_png(h, path::String) = (Cairo.write_to_png(h[1], path); nothing)
 
 include("PlotCore.jl")
 using .PlotCore

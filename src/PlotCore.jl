@@ -4,10 +4,12 @@
 #     forwards to it and runs the library's compiled code;
 #   - `ColorSpec`: a colour, or one per point;
 #   - `Plot`: a recipe. `Lines` and `Scatter` are the library's own; a user's recipe conforms too.
-# The Cairo backend stays outside the trait world: the drawing primitives are declared calls into
-# the ordinary module around this one (rule 1: calls upward).
+# Cairo is called directly (wrapping by facts, writeup/explorations/wrapping-by-facts.md): the
+# trait world may call any Julia code; its compiled code depends on Cairo's methods only through
+# dispatch facts at concrete signatures.
 @trait_module module PlotCore
 using TraitWorld
+using Cairo: Cairo
 export Positions, npoints, pointx, pointy, ColorSpec, rgba, Plot, draw!, datalimits,
        Figure, Axis, Lines, Scatter, Canvas, Transform2D, add_lines!, add_scatter!, render_png, newfigure, recolor!, setcolor!
 
@@ -48,13 +50,12 @@ end
     rgba(c, i) = c[i]
 end
 
-# --- the canvas: a handle on the backend's surface, and the transform from data to pixels -----------
+# --- the canvas: Cairo's surface and context, and the transform from data to pixels ------------------
 
-@handle Surface
-
-"Where a plot draws: the backend's surface, kept as a handle (opaque here)."
+"Where a plot draws: a Cairo image surface and its context."
 struct Canvas
-    surface::Surface
+    surface::Cairo.CairoSurfaceBase{UInt32}
+    ctx::Cairo.CairoContext
     width::Int
     height::Int
 end
@@ -69,17 +70,53 @@ end
 @inline px(t::Transform2D, x::Float64) = t.ax * x + t.bx
 @inline py(t::Transform2D, y::Float64) = t.ay * y + t.by
 
-# the backend's primitives: declared calls into the ordinary module around this one
-newsurface(w::Int, h::Int) = @call _cairo_surface(w, h)::Surface
-polyline!(c::Canvas, xs::Vector{Float64}, ys::Vector{Float64}, col::NTuple{4,Float64}, lw::Float64) =
-    @call _cairo_polyline!(c.surface, xs, ys, col, lw)::Nothing
-circles!(c::Canvas, xs::Vector{Float64}, ys::Vector{Float64}, cols::Vector{NTuple{4,Float64}}, r::Float64) =
-    @call _cairo_circles!(c.surface, xs, ys, cols, r)::Nothing
-text!(c::Canvas, x::Float64, y::Float64, s::String, size::Float64, halign::Symbol) =
-    @call _cairo_text!(c.surface, x, y, s, size, halign)::Nothing
-fillrect!(c::Canvas, x::Float64, y::Float64, w::Float64, h::Float64, col::NTuple{4,Float64}) =
-    @call _cairo_fillrect!(c.surface, x, y, w, h, col)::Nothing
-writepng(c::Canvas, path::String) = @call _cairo_write_png(c.surface, path)::Nothing
+# the backend's primitives, calling Cairo.jl directly
+function newcanvas(w::Int, h::Int)
+    s = Cairo.CairoARGBSurface(w, h)
+    return Canvas(s, Cairo.CairoContext(s), w, h)
+end
+function polyline!(c::Canvas, xs::Vector{Float64}, ys::Vector{Float64}, col::NTuple{4,Float64}, lw::Float64)
+    isempty(xs) && return nothing
+    ctx = c.ctx
+    Cairo.set_source_rgba(ctx, col[1], col[2], col[3], col[4])
+    Cairo.set_line_width(ctx, lw)
+    Cairo.move_to(ctx, xs[1], ys[1])
+    for i in 2:length(xs)
+        Cairo.line_to(ctx, xs[i], ys[i])
+    end
+    Cairo.stroke(ctx)
+    return nothing
+end
+function circles!(c::Canvas, xs::Vector{Float64}, ys::Vector{Float64}, cols::Vector{NTuple{4,Float64}}, r::Float64)
+    ctx = c.ctx
+    for i in eachindex(xs)
+        col = cols[i]
+        Cairo.set_source_rgba(ctx, col[1], col[2], col[3], col[4])
+        Cairo.new_sub_path(ctx)
+        Cairo.arc(ctx, xs[i], ys[i], r, 0.0, 2pi)
+        Cairo.fill(ctx)
+    end
+    return nothing
+end
+function text!(c::Canvas, x::Float64, y::Float64, s::String, size::Float64, halign::Symbol)
+    ctx = c.ctx
+    Cairo.set_source_rgba(ctx, 0.0, 0.0, 0.0, 1.0)
+    Cairo.select_font_face(ctx, "Sans", Cairo.FONT_SLANT_NORMAL, Cairo.FONT_WEIGHT_NORMAL)
+    Cairo.set_font_size(ctx, size)
+    ext = Cairo.text_extents(ctx, s)
+    dx = halign === :center ? -ext[3] / 2 : halign === :right ? -ext[3] : 0.0
+    Cairo.move_to(ctx, x + dx, y)
+    Cairo.show_text(ctx, s)
+    return nothing
+end
+function fillrect!(c::Canvas, x::Float64, y::Float64, w::Float64, h::Float64, col::NTuple{4,Float64})
+    ctx = c.ctx
+    Cairo.set_source_rgba(ctx, col[1], col[2], col[3], col[4])
+    Cairo.rectangle(ctx, x, y, w, h)
+    Cairo.fill(ctx)
+    return nothing
+end
+writepng(c::Canvas, path::String) = (Cairo.write_to_png(c.surface, path); nothing)
 
 # --- plots: a recipe trait, and the library's two recipes -----------------------------------------
 
@@ -182,7 +219,7 @@ ticklabel(v::Float64) = abs(v - round(v)) < 1e-9 ? string(Int(round(v))) : strin
 "Render a figure into a PNG file."
 function render_png(f::Figure, path::String)
     W, H = f.width, f.height
-    c = Canvas(newsurface(W, H), W, H)
+    c = newcanvas(W, H)
     fillrect!(c, 0.0, 0.0, Float64(W), Float64(H), (1.0, 1.0, 1.0, 1.0))
     ax = f.axis
     xmin, xmax, ymin, ymax = Inf, -Inf, Inf, -Inf
