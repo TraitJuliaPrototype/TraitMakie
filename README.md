@@ -58,7 +58,7 @@ The trait design predicts:
 | 7 | `verify_main` from `main` to drawing; `juliac --trim` | closed; a running binary under 20 MB | session 25 (`../experiments/aot/`): 4.07 MB, 0.05 s to the PNG, byte-identical to the session's; no holes on normal paths. Built with `--trim=unsafe-warn`; `--trim=safe` reports 26 errors from the machinery's slow paths |
 | 8 | errors: bad data, a wrong colour result, an undeclared operation in a recipe | at the entry or the conformance, naming the bound | not yet |
 | 9 | run-time cost of dynamic positions: 10⁵-point lines updated 100 times; 50 plots redrawn | within 10% of PlainPlots | not yet |
-| 10 | precompile cost, image sizes, image load time (stock and patched) | larger images, stated | not yet |
+| 10 | precompile cost, image sizes, image load time (stock and patched) | larger images, stated | session 27 (`../experiments/demos/images.jl`): precompile 4.6 s patched, 6.1 s stock; native code 5.0 MB patched, 3.8 MB stock (piece 5 keeps the policy's code); `using` 0.28 s patched, 0.24 s stock |
 
 **Success:** rows 1–3 and 6–7 hold where PlainPlots fails them. Rows 4, 5 and 9 are reported as numbers, whatever they are.
 
