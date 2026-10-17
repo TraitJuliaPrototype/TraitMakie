@@ -1,0 +1,12 @@
+name = "PlainPlots"
+uuid = "7e055042-c00a-4782-9863-d6a582dceb57"
+version = "0.0.1"
+authors = ["Frank Hellmann"]
+
+[deps]
+Cairo = "159f3aea-2a34-519c-b102-8c37f9878175"
+PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
+
+[compat]
+Cairo = "1.1.1"
+julia = "1.13"

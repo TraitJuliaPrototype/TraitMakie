@@ -1,7 +1,9 @@
 [deps]
+PlainPlots = "7e055042-c00a-4782-9863-d6a582dceb57"
 TraitMakie = "46a11cac-d2c9-498a-a901-1fb9b8611426"
 TraitWorld = "7a3c1e52-9b4d-4f6e-8a21-5d0c3b9e7f14"
 
 [sources]
+PlainPlots = {path = "../../baselines/PlainPlots"}
 TraitMakie = {path = "../.."}
 TraitWorld = {path = "../../../TraitWorld"}
