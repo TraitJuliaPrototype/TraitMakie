@@ -2,9 +2,9 @@
 
 A plotting library written in the trait world: the second demonstrator that the trait world works for a real, large library. It has Makie's shape at about a twentieth of its size, measured against Makie, against the same algorithms written without traits, and against matplotlib.
 
-Status: step 1 done (session 23): `PlotCore` with `lines` and `scatter`, axes, ticks and labels, a Cairo backend through declared calls, the ordinary interface, tests with a user's data type and colour. The design is in the design repository (`../writeup/notes/`); this library's design is `../writeup/explorations/makie-rewrite.md` (written before keys; `src/PlotCore.jl` is the keys form).
+Status: step 1 done (session 23): `PlotCore` with `lines` and `scatter`, axes, ticks and labels, Cairo called directly (wrapping by facts, session 24), the ordinary interface, tests with a user's data type and colour; row 6 (session 23) and the trimmed binary of row 7 (session 25). The rows were reviewed for wrapping by facts in session 26 (`../writeup/reviews/2026-10-17-demonstrators-under-facts.md`). The design is in the design repository (`../writeup/notes/`); this library's design is `../writeup/explorations/makie-rewrite.md` (written before keys; `src/PlotCore.jl` is the keys form).
 
-**How it is built (keys):** `Positions`, `ColorSpec` and `Plot` are traits. `Lines` and `Scatter` keep their data and colour as dynamic values; an axis keeps its plots as `Vector{Plot}` (`Vector{Dynamic{Plot}}`); the loops over data are bounded functions, compiled per key when a dynamic value is opened. Cairo stays outside the trait world: its primitives are ordinary functions in `TraitMakie`, reached by declared calls. `lines(x, y)` converts `x, y` explicitly into one value the bounds take (no bounds over several arguments).
+**How it is built (keys):** `Positions`, `ColorSpec` and `Plot` are traits. `Lines` and `Scatter` keep their data and colour as dynamic values; an axis keeps its plots as `Vector{Plot}` (`Vector{Dynamic{Plot}}`); the loops over data are bounded functions, compiled per key when a dynamic value is opened. Cairo is called directly, as ordinary code; its code is compiled under the facts policy (case B of `../writeup/notes/3-wrapping.md`). `lines(x, y)` converts `x, y` explicitly into one value the bounds take (no bounds over several arguments).
 
 ## What it demonstrates
 
@@ -17,7 +17,7 @@ Makie 0.24.16, measured in the earlier experiments (`../experiments/interfaces/`
 
 The trait design predicts:
 - **Fast first plots in every load order:** work after load ≤ 0.3 s, with a spread under 10% across load orders.
-- **No invalidation of the library's compiled code.**
+- **Loads cannot slow the library down:** only a stakeholder of one of its dispatch facts, or a pirate that wins at one, can discard its compiled code.
 - **Cheap new types and shapes:** tens of dispatch targets, all in listed conformances, and tens of milliseconds for a new user type.
 - **Attribute shapes can change:** one dispatch per change.
 - **A trimmed binary that renders a PNG.**
@@ -31,7 +31,7 @@ The trait design predicts:
   - recipes: `lines`, `scatter`, `barplot`, `hist`;
   - a typed compute graph, an `Axis` (limits, linear ticks, labels, the `Float32` conversion), a two-cell grid layout;
   - a workload covering every primitive at both position families.
-- **`CairoBackend`:** `Backend` for a Cairo PNG surface. Whether Cairo.jl is wrapped or reached through declared calls is decided by the check; either outcome is a result.
+- **`CairoBackend`:** `Backend` for a Cairo PNG surface, calling Cairo.jl directly.
 - **`Plotting`,** ordinary code: `lines(x, y)`, the current figure, `save`.
 - **`UserPlots`,** a user package defining:
   - `Trajectory` (a one-line conformance);
@@ -47,18 +47,18 @@ The trait design predicts:
 
 ## Measurements
 
-| # | What | Prediction | Measured (session 23; fresh sessions, three runs) |
+| # | What | Prediction | Measured (fresh sessions, three runs; rows marked *remeasure* predate wrapping by facts) |
 |---|---|---|---|
-| 1 | time to first PNG in a fresh process, load and work separately | work ≤ 0.3 s in every load order | load 0.30–0.41 s; work 0.1–0.22 s alone |
-| 2 | load-order independence with CSV, DataFrames, ChurnStorm, BasePirate before, after, or not at all; stock and patched Julia | spread under 10% | CSV and DataFrames before: 0.31–0.33 s; after: 0.37 s stock, 0.08–0.09 s patched. Not yet under 10% |
-| 3 | invalidations over each load | none in trait-world code, with the filter | PlotCore: 0 in every order, stock and patched; TraitWorld machinery: 285 stock, 14 patched |
-| 4 | cost of a new data type, colour, recipe, from images and from the prompt | tens of ms for a projection | a new data type at the prompt (forwarding): 61–132 ms |
-| 5 | dispatch targets, phases A–G of x15/x16 | tens, all listed; 0–2 per new shape | not yet |
-| 6 | colour shape change: `:red`, then a vector, then `Gradient` | works | works (`recolor!`): render 20 ms; to a vector 79 ms and to a user's `Gradient` 91 ms at first use (compiling the new shape); back to `:red`/`:blue` 9 ms |
-| 7 | `verify_main` from `main` to drawing; `juliac --trim` | closed; a running binary under 20 MB | not yet |
+| 1 | time to first PNG in a fresh process, load and work separately | work ≤ 0.3 s in every load order; patched loads no slower than stock | *remeasure*. Session 23: load 0.30–0.41 s; work 0.1–0.22 s alone. Session 26: `using TraitMakie` 0.23 s stock, 0.69 s patched (TraitReport row 5) |
+| 2 | load-order independence with CSV, DataFrames, ChurnStorm, BasePirate before, after, or not at all; stock and patched Julia | spread under 10% | patched, under facts (session 24): first PNG 87–97 ms with twelve packages before, after or not at all. Stock under facts not yet |
+| 3 | policy CodeInstances lost over each load | 0 | patched, under facts (session 24, g2all): 0 over twelve loads in any order |
+| 4 | cost of a new data type, colour, recipe, from images and from the prompt, without and after big loads | tens of ms for a type that forwards to a known key | *remeasure*. Session 23: a new data type at the prompt (forwarding) 61–132 ms |
+| 5 | dispatch targets for phases A–G of x15/x16: the targets `verify_main` lists, and the run-time sites the policy leaves in PlotCore's code | tens, all listed; 0–2 per new shape | not yet |
+| 6 | colour shape change: `:red`, then a vector, then `Gradient` | works | works (`recolor!`). *Remeasure*; session 23: render 20 ms; to a vector 79 ms and to a user's `Gradient` 91 ms at first use (compiling the new shape); back to `:red`/`:blue` 9 ms |
+| 7 | `verify_main` from `main` to drawing; `juliac --trim` | closed; a running binary under 20 MB | session 25 (`../experiments/aot/`): 4.07 MB, 0.05 s to the PNG, byte-identical to the session's; no holes on normal paths. Built with `--trim=unsafe-warn`; `--trim=safe` reports 26 errors from the machinery's slow paths |
 | 8 | errors: bad data, a wrong colour result, an undeclared operation in a recipe | at the entry or the conformance, naming the bound | not yet |
 | 9 | run-time cost of dynamic positions: 10⁵-point lines updated 100 times; 50 plots redrawn | within 10% of PlainPlots | not yet |
-| 10 | precompile cost and image sizes | larger images, stated | not yet |
+| 10 | precompile cost, image sizes, image load time (stock and patched) | larger images, stated | not yet |
 
 **Success:** rows 1–3 and 6–7 hold where PlainPlots fails them. Rows 4, 5 and 9 are reported as numbers, whatever they are.
 
@@ -75,6 +75,6 @@ It starts after TraitDifferentialEquations has its first measurements.
 - lenses and trait fields;
 - associated types (`Positions{N, T}`);
 - definition checking with parameter archetypes;
-- printing frames by bound and representation.
+- printing frames by bound and key (done).
 
 **Running on the shared machine:** one Julia job at a time, niced; juliac builds alone, under the memory guard.
