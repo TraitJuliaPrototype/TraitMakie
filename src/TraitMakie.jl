@@ -73,6 +73,8 @@ TraitWorld.@workload begin
     xs = collect(range(0.0, 2pi; length = 50))
     f = lines(xs, sin.(xs); title = "workload")
     scatter!(f, xs, cos.(xs); color = [(0.2, 0.4, 0.8, 1.0) for _ in xs])
+    scatter!(f, xs, sin.(xs); color = :red)                      # the library's own colour types, each recipe
+    scatter!(f, xs, sin.(xs); color = (0.1, 0.2, 0.3))
     lines!(f, [(0.0, 0.0), (1.0, 1.0)]; color = (1.0, 0.0, 0.0))
     recolor!(f, 2, :red)
     path = tempname() * ".png"
