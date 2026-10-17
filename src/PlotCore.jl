@@ -11,7 +11,8 @@
 using TraitWorld
 using Cairo: Cairo
 export Positions, npoints, pointx, pointy, ColorSpec, rgba, Plot, draw!, datalimits,
-       Figure, Axis, Lines, Scatter, Canvas, Transform2D, add_lines!, add_scatter!, render_png, newfigure, recolor!, setcolor!
+       Figure, Axis, Lines, Scatter, Bars, VLines, Canvas, Transform2D, add_lines!, add_scatter!, add_bars!, add_vlines!,
+       render_png, newfigure, recolor!, setcolor!
 
 # --- the traits --------------------------------------------------------------------------------
 
@@ -60,12 +61,14 @@ struct Canvas
     height::Int
 end
 
-"Data to pixels: an affine map per axis (pixel y grows downwards)."
+"Data to pixels: an affine map per axis (pixel y grows downwards), and the plot area's top and bottom in pixels."
 struct Transform2D
     ax::Float64
     bx::Float64
     ay::Float64
     by::Float64
+    top::Float64
+    bottom::Float64
 end
 @inline px(t::Transform2D, x::Float64) = t.ax * x + t.bx
 @inline py(t::Transform2D, y::Float64) = t.ay * y + t.by
@@ -175,6 +178,50 @@ function draw!(p::Scatter, c::Canvas, t::Transform2D)
     circles!(c, xs, ys, colors(p.color, length(xs))::Vector{NTuple{4,Float64}}, p.markersize / 2)
     return nothing
 end
+"Bars from zero to each point's y, centred at its x."
+mutable struct Bars
+    pos::Positions
+    color::ColorSpec
+    width::Float64                  # in data units
+end
+"Vertical lines at the points' x across the plot area (their y is ignored)."
+mutable struct VLines
+    pos::Positions
+    color::ColorSpec
+    linewidth::Float64
+end
+function barlimits(pos::Positions, w::Float64)
+    xmin, xmax, ymin, ymax = limits(pos)
+    return (xmin - w / 2, xmax + w / 2, min(ymin, 0.0), max(ymax, 0.0))
+end
+function drawbars(pos::Positions, c::Canvas, t::Transform2D, col::ColorSpec, w::Float64)
+    for i in 1:npoints(pos)
+        x, y = pointx(pos, i), pointy(pos, i)
+        x0, x1 = px(t, x - w / 2), px(t, x + w / 2)
+        y0, y1 = py(t, 0.0), py(t, y)
+        fillrect!(c, x0, min(y0, y1), x1 - x0, abs(y1 - y0), rgba(col, i))
+    end
+    return nothing
+end
+function vlimits(pos::Positions)
+    xmin, xmax, _, _ = limits(pos)
+    return (xmin, xmax, Inf, -Inf)                  # no extent in y
+end
+function drawvlines(pos::Positions, c::Canvas, t::Transform2D, col::ColorSpec, lw::Float64)
+    for i in 1:npoints(pos)
+        x = px(t, pointx(pos, i))
+        polyline!(c, [x, x], [t.top, t.bottom], rgba(col, i), lw)
+    end
+    return nothing
+end
+datalimits(p::Bars) = barlimits(p.pos, p.width)::NTuple{4,Float64}
+datalimits(p::VLines) = vlimits(p.pos)::NTuple{4,Float64}
+draw!(p::Bars, c::Canvas, t::Transform2D) = drawbars(p.pos, c, t, p.color, p.width)::Nothing
+draw!(p::VLines, c::Canvas, t::Transform2D) = drawvlines(p.pos, c, t, p.color, p.linewidth)::Nothing
+setcolor!(p::Bars, c::Dynamic{ColorSpec}) = (p.color = c; nothing)
+setcolor!(p::VLines, c::Dynamic{ColorSpec}) = (p.color = c; nothing)
+@implement Plot Bars
+@implement Plot VLines
 setcolor!(p::Lines, c::Dynamic{ColorSpec}) = (p.color = c; nothing)
 setcolor!(p::Scatter, c::Dynamic{ColorSpec}) = (p.color = c; nothing)
 @implement Plot Lines
@@ -203,6 +250,10 @@ add_lines!(f::Figure, pos::Positions, color::ColorSpec, linewidth::Float64) =
     (push!(f.axis.plots, Dynamic{Plot}(Lines(Dynamic{Positions}(pos), Dynamic{ColorSpec}(color), linewidth))); nothing)
 add_scatter!(f::Figure, pos::Positions, color::ColorSpec, markersize::Float64) =
     (push!(f.axis.plots, Dynamic{Plot}(Scatter(Dynamic{Positions}(pos), Dynamic{ColorSpec}(color), markersize))); nothing)
+add_bars!(f::Figure, pos::Positions, color::ColorSpec, width::Float64) =
+    (push!(f.axis.plots, Dynamic{Plot}(Bars(Dynamic{Positions}(pos), Dynamic{ColorSpec}(color), width))); nothing)
+add_vlines!(f::Figure, pos::Positions, color::ColorSpec, linewidth::Float64) =
+    (push!(f.axis.plots, Dynamic{Plot}(VLines(Dynamic{Positions}(pos), Dynamic{ColorSpec}(color), linewidth))); nothing)
 
 "Linear ticks: about `n` round values covering [lo, hi]."
 function ticks(lo::Float64, hi::Float64, n::Int)
@@ -234,7 +285,7 @@ function render_png(f::Figure, path::String)
     xmin -= dx; xmax += dx; ymin -= dy; ymax += dy
     l, r, top, b = 60.0, W - 20.0, 40.0, H - 40.0     # the plot area
     t = Transform2D((r - l) / (xmax - xmin), l - (r - l) / (xmax - xmin) * xmin,
-                    -(b - top) / (ymax - ymin), b + (b - top) / (ymax - ymin) * ymin)
+                    -(b - top) / (ymax - ymin), b + (b - top) / (ymax - ymin) * ymin, top, b)
     black, gray = (0.0, 0.0, 0.0, 1.0), (0.85, 0.85, 0.85, 1.0)
     for v in ticks(xmin, xmax, 6)
         polyline!(c, [px(t, v), px(t, v)], [top, b], gray, 0.5)

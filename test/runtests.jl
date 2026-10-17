@@ -29,3 +29,16 @@ TraitMakie.rgba(g::Gradient, i::Int) = (t = (i - 1) / max(g.n - 1, 1); g.from .+
     # a value that does not conform is refused at the bound, naming it
     @test_throws Exception lines!(f, "not data")
 end
+
+@testset "TraitMakie: bars, histograms, vertical lines" begin
+    x = [0.1i for i in 1:200]
+    h = hist(x; bins = 24, title = "h", size = (1200, 800))
+    vlines!(h, sum(x) / length(x); color = :red)
+    b = h.axis.plots[1]
+    l = TraitMakie.PlotCore.datalimits(b)
+    @test l[3] == 0.0 && l[1] ≈ 0.1 && l[2] ≈ 20.0
+    @test TraitMakie.PlotCore.datalimits(h.axis.plots[2])[3] == Inf
+    p = save(tempname() * ".png", h)
+    @test isfile(p) && filesize(p) > 1000
+    @test isfile(save(tempname() * ".png", barplot([1, 2, 3], [3.0, 1.0, 2.0]; color = :orange)))
+end

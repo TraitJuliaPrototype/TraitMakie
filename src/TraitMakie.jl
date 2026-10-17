@@ -14,7 +14,7 @@ using TraitWorld
 
 include("PlotCore.jl")
 using .PlotCore
-export lines, lines!, scatter, scatter!, save, figure, recolor!, Positions, npoints, pointx, pointy, ColorSpec, rgba, Plot
+export lines, lines!, scatter, scatter!, barplot, barplot!, hist, hist!, vlines!, save, figure, recolor!, Positions, npoints, pointx, pointy, ColorSpec, rgba, Plot
 
 # --- the ordinary interface --------------------------------------------------------------------------
 
@@ -35,6 +35,30 @@ scatter!(fig::PlotCore.Figure, x::AbstractVector, y::AbstractVector; color = :bl
     (PlotCore.add_scatter!(fig, _xy(x, y), _color(color), Float64(markersize)); fig)
 scatter!(fig::PlotCore.Figure, data; color = :black, markersize = 6) =
     (PlotCore.add_scatter!(fig, data, _color(color), Float64(markersize)); fig)
+barplot!(fig::PlotCore.Figure, x::AbstractVector, y::AbstractVector; color = :blue, width = nothing) =
+    (PlotCore.add_bars!(fig, _xy(x, y), _color(color), Float64(something(width, _gap(x)))); fig)
+"Bars' default width: 80% of the smallest gap between neighbouring x."
+_gap(x) = length(x) < 2 ? 1.0 : 0.8 * minimum(diff(sort(Vector{Float64}(x))))
+
+"A histogram of `x` with `bins` equal bins, as bars."
+function hist!(fig::PlotCore.Figure, x::AbstractVector; bins::Integer = 10, color = :blue)
+    v = Vector{Float64}(x)
+    lo, hi = extrema(v)
+    w = hi > lo ? (hi - lo) / bins : 1.0
+    counts = zeros(bins)
+    for xi in v
+        counts[clamp(floor(Int, (xi - lo) / w) + 1, 1, bins)] += 1
+    end
+    return barplot!(fig, [lo + (k - 0.5) * w for k in 1:bins], counts; color, width = w)
+end
+
+"Vertical lines at `xs` across the plot area."
+vlines!(fig::PlotCore.Figure, xs::AbstractVector; color = :black, linewidth = 1.5) =
+    (PlotCore.add_vlines!(fig, _xy(xs, zeros(length(xs))), _color(color), Float64(linewidth)); fig)
+vlines!(fig::PlotCore.Figure, x::Real; kw...) = vlines!(fig, [x]; kw...)
+
+barplot(args...; title = "", size = (600, 400), kw...) = barplot!(figure(; size, title), args...; kw...)
+hist(args...; title = "", size = (600, 400), kw...) = hist!(figure(; size, title), args...; kw...)
 lines(args...; title = "", size = (600, 400), kw...) = lines!(figure(; size, title), args...; kw...)
 scatter(args...; title = "", size = (600, 400), kw...) = scatter!(figure(; size, title), args...; kw...)
 
@@ -53,6 +77,9 @@ TraitWorld.@workload begin
     recolor!(f, 2, :red)
     path = tempname() * ".png"
     save(path, f)
+    h = hist(xs; bins = 24, title = "workload", size = (1200, 800))
+    vlines!(h, 1.0; color = :red)
+    save(path, h)
     rm(path; force = true)
 end
 
