@@ -47,14 +47,14 @@ The trait design predicts:
 
 ## Measurements
 
-| # | What | Prediction | Measured (fresh sessions, three runs; rows marked *remeasure* predate wrapping by facts) |
+| # | What | Prediction | Measured (session 26: `scripts/rows.jl`, one fresh process per cell, CSV, DataFrames and CairoMakie loaded before, after or not at all; single runs) |
 |---|---|---|---|
-| 1 | time to first PNG in a fresh process, load and work separately | work ≤ 0.3 s in every load order; patched loads no slower than stock | *remeasure*. Session 23: load 0.30–0.41 s; work 0.1–0.22 s alone. Session 26: `using TraitMakie` 0.23 s stock, 0.69 s patched (TraitReport row 5) |
-| 2 | load-order independence with CSV, DataFrames, ChurnStorm, BasePirate before, after, or not at all; stock and patched Julia | spread under 10% | patched, under facts (session 24): first PNG 87–97 ms with twelve packages before, after or not at all. Stock under facts not yet |
+| 1 | time to first PNG in a fresh process, load and work separately | work ≤ 0.3 s in every load order; patched loads no slower than stock | patched: `using TraitMakie` 0.24–0.26 s, first PNG (lines, scatter, save) 62–65 ms. Stock: 0.22–0.28 s and 4.6 s, 11.0 s with the loads before: without piece 5 every session compiles the policy's code, Cairo's included. Session 23, before facts: load 0.30–0.41 s, work 0.1–0.22 s |
+| 2 | load-order independence with CSV, DataFrames, ChurnStorm, BasePirate before, after, or not at all; stock and patched Julia | spread under 10% | patched: first PNG 62–65 ms with CSV, DataFrames, CairoMakie before, after or not at all (session 26); 87–97 ms with twelve packages (session 24). Stock: 4.6–11.0 s |
 | 3 | policy CodeInstances lost over each load | 0 | patched, under facts (session 24, g2all): 0 over twelve loads in any order |
-| 4 | cost of a new data type, colour, recipe, from images and from the prompt, without and after big loads | tens of ms for a type that forwards to a known key | *remeasure*. Session 23: a new data type at the prompt (forwarding) 61–132 ms |
+| 4 | cost of a new data type, colour, recipe, from images and from the prompt, without and after big loads | tens of ms for a type that forwards to a known key | patched: a new data type that forwards, `@implement` 0.61 s and first PNG 27 ms; after big loads `@implement` 1.63–1.68 s, PNG 27–36 ms. A new colour type: `@implement` 0.10–0.15 s, first PNG 114–116 ms, but 6.4 s with the loads before. `@implement` itself, and new keys after big loads, are the open problem (open-issues §4.5). Stock: `@implement` 1.0–1.5 s |
 | 5 | dispatch targets for phases A–G of x15/x16: the targets `verify_main` lists, and the run-time sites the policy leaves in PlotCore's code | tens, all listed; 0–2 per new shape | not yet |
-| 6 | colour shape change: `:red`, then a vector, then `Gradient` | works | works (`recolor!`). *Remeasure*; session 23: render 20 ms; to a vector 79 ms and to a user's `Gradient` 91 ms at first use (compiling the new shape); back to `:red`/`:blue` 9 ms |
+| 6 | colour shape change: `:red`, then a vector, then `Gradient` | works | works (`recolor!`), patched, in every order: render 9 ms; to a vector 40–48 ms, to a user's `Gradient` 28–29 ms at first use; to `:purple` 9 ms. Stock: to a vector 95 ms |
 | 7 | `verify_main` from `main` to drawing; `juliac --trim` | closed; a running binary under 20 MB | session 25 (`../experiments/aot/`): 4.07 MB, 0.05 s to the PNG, byte-identical to the session's; no holes on normal paths. Built with `--trim=unsafe-warn`; `--trim=safe` reports 26 errors from the machinery's slow paths |
 | 8 | errors: bad data, a wrong colour result, an undeclared operation in a recipe | at the entry or the conformance, naming the bound | not yet |
 | 9 | run-time cost of dynamic positions: 10⁵-point lines updated 100 times; 50 plots redrawn | within 10% of PlainPlots | not yet |
