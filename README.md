@@ -1,80 +1,88 @@
 # TraitMakie
 
-A plotting library written in the trait world: the second demonstrator that the trait world works for a real, large library. It has Makie's shape at about a twentieth of its size, measured against Makie, against the same algorithms written without traits, and against matplotlib.
+A plotting library written in the trait world: the second demonstrator that the trait world works for a real library. It has Makie's shape at a small fraction of its size: traits for data, colours, markers and plots, recipes with children, attributes that change shape after a plot is made, and live data. Cairo draws the PNGs. The library's design is `../writeup/explorations/makie-rewrite.md` (written before keys; `src/PlotCore.jl` is the keys form).
 
-Status (session 27, 2026-10-17): `hist`, `barplot` and `vlines!` added (`Bars`, `VLines` recipes) for TraitReport; the workload covers the library's own colour types on each recipe. **First PNG 18–22 ms in every load order** without view caches (session 26: 62–65 ms, with a view cache); a new key after big loads costs 6.4 s on the patched build and **99–107 ms on the system image with TraitWorld in it** (`../experiments/sysimage`), which removes open-issues §1.3 for this row. Step 1 (session 23): `PlotCore` with `lines` and `scatter`, axes, ticks and labels, Cairo called directly (wrapping by facts, session 24), the ordinary interface, tests with a user's data type and colour; row 6 (session 23) and the trimmed binary of row 7 (session 25). The rows were reviewed for wrapping by facts in session 26 (`../writeup/reviews/2026-10-17-demonstrators-under-facts.md`). The design is in the design repository (`../writeup/notes/`); this library's design is `../writeup/explorations/makie-rewrite.md` (written before keys; `src/PlotCore.jl` is the keys form).
+## Status (session 30, 2026-10-18)
 
-**How it is built (keys):** `Positions`, `ColorSpec` and `Plot` are traits. `Lines` and `Scatter` keep their data and colour as dynamic values; an axis keeps its plots as `Vector{Plot}` (`Vector{Dynamic{Plot}}`); the loops over data are bounded functions, compiled per key when a dynamic value is opened. Cairo is called directly, as ordinary code; its code is compiled under the facts policy (case B of `../writeup/notes/3-wrapping.md`). `lines(x, y)` converts `x, y` explicitly into one value the bounds take (no bounds over several arguments).
+- **Step 2 is built and correct.** Nine plot types (lines, scatter, bars, vertical lines, polygons, text, and the recipes with children `stairs`, `hist`, `band`), marker shapes and per-point colours through `Dynamic`, `p.color = x` at the prompt, live data. 61 tests, five reference images, and a scripted REPL session (ten checks) pass.
+- **The control is equivalent.** PlainPlots has every feature, and draws the same pixels for all five reference figures.
+- **Nothing was timed in session 30.** The foundation is changing: Julia's compiler gets parts (B) and (C), then (D) (`Dynamic` in the compiler), and TraitWorld's own policy is being removed. The numbers below are from sessions 23–27, under TraitWorld's prototype policy. They are history until re-measured (the list "To measure after (D)").
 
-## What it demonstrates
+## What a user sees at the prompt
 
-Makie 0.24.16, measured in the earlier experiments (`../experiments/interfaces/`):
-- its first plot reaches 1,940 distinct methods by dynamic dispatch;
-- each new argument type or attribute shape adds 35–84 more;
-- a new table type costs 297 ms;
-- an ad-hoc session's first PNG takes 15.7–16.2 s, of which Makie's own recompilation, caused by other packages' loads, is the largest part;
-- changing a colour from `:red` to a vector of colours fails.
+The user's criterion: interactivity as the user perceives it. A slow import followed by instant plots is fine. A warning that teaches counts as a win.
 
-The trait design predicts:
-- **Fast first plots in every load order:** work after load ≤ 0.3 s, with a spread under 10% across load orders.
-- **Loads cannot slow the library down:** only a stakeholder of one of its dispatch facts, or a pirate that wins at one, can discard its compiled code.
-- **Cheap new types and shapes:** tens of dispatch targets, all in listed conformances, and tens of milliseconds for a new user type.
-- **Attribute shapes can change:** one dispatch per change.
-- **A trimmed binary that renders a PNG.**
+- **Plots, then changes.** `f = lines(x, y)`, `p = scatter!(f, x, z)`, then `p.color = :red`, `p.color = [(r, g, b, a), …]`, `p.marker = :diamond`, `p.pos = (x, w)`, `h.bins = 12`, `s.step = :center`. Each change shows at the next `save`. A colour or marker changes shape (a symbol, a vector, a user's type) where Makie 0.24.16 fails (`makie-rewrite.md` §1).
+- **New types at the prompt.** A data type in one line (`@implement Positions Track`), a colour or marker of the user's own (one method and `@implement`), a recipe of the user's own made of the library's recipes (`plot!(fig, Lollipop(x, y))`).
+- **Live data.** `lv = Live(data)`, `lines(lv)`, `lv[] = newdata`: the plot reads the current value at each render; `onchange(_ -> save(path, fig), lv)` redraws on every change. A user's own mutable type works the same way (`Sensor`, in the tests).
+- **Mistakes teach.** `p.color = :magenta` raises "unknown colour :magenta. The named colours are :black, :blue, … ; a colour may also be an RGB or RGBA tuple, a vector of colours (one per point), or a value of a type conforming to ColorSpec", and the plot keeps its colour. Unknown markers, steps, alignments and bin counts are refused the same way. A value of no conforming type is refused at the bound ("a String does not conform to ColorSpec"). Earlier (session 27, row 8): bad data refused at the entry naming the bound, a wrong colour result refused at `@implement`, an undeclared operation in a user's recipe reported at its definition.
+- **Earlier timings** (session 27, prototype policy, script mode): `using TraitMakie` 0.24–0.28 s, then the first PNG in 18–22 ms in every load order; a new data or colour type 0.10–0.23 s for the conformance and 50–130 ms for its first PNG. Under the criterion that is instant after a cheap import. Re-measure at the REPL after (D).
 
-## Scope
+## Scope: what is in the tree
 
-**Packages:**
-- **`PlotCore`,** the trait module:
-  - traits: `Coords`, `Positions{2}` (`Float64` and `Float32` families), `ColorSpec`, `Source`, `Plot`, `Backend`, `Transform` (identity, `log10`), `Layoutable`;
-  - primitives: lines, scatter (circles, squares), poly (rectangles, polygons), text (Cairo's toy API);
-  - recipes: `lines`, `scatter`, `barplot`, `hist`;
-  - a typed compute graph, an `Axis` (limits, linear ticks, labels, the `Float32` conversion), a two-cell grid layout;
-  - a workload covering every primitive at both position families.
-- **`CairoBackend`:** `Backend` for a Cairo PNG surface, calling Cairo.jl directly.
-- **`Plotting`,** ordinary code: `lines(x, y)`, the current figure, `save`.
-- **`UserPlots`,** a user package defining:
-  - `Trajectory` (a one-line conformance);
-  - `Gradient` (a `ColorSpec`);
-  - `Sensor` (a `Source`);
-  - a recipe;
-  - plus a variant defined at the prompt.
+- **`src/PlotCore.jl`, the trait module.**
+  - Traits: `Positions` (points by index), `Sample` (values a histogram bins), `ColorSpec` (a colour per point), `MarkerShape` (an outline per point), `Plot` (a recipe: `datalimits`, `draw!`, `setcolor!`).
+  - Conformances: `Matrix{Float64}` (n × 2) and `Vector{NTuple{2,Float64}}` as positions; `Vector{<:Real}` as a sample; `Symbol`, an RGBA tuple, a vector of either as colours; `Symbol` and `Vector{Symbol}` as markers (`:circle`, `:rect`, `:diamond`, `:utriangle`, `:cross`).
+  - Primitives: `Lines`, `Scatter`, `Bars`, `VLines`, `Poly`, `Labels`.
+  - Recipes with children: `Stairs` (a `Lines`), `Hist` (a `Bars`), `Band` (a `Poly`).
+  - An axis with limits, linear ticks, tick labels, a title and axis labels; Cairo called directly.
+- **`src/TraitMakie.jl`, the ordinary layer.** `lines`, `scatter`, `barplot`, `hist`, `vlines!`, `stairs`, `band`, `poly`, `text!`, `plot!`, `figure`, `recolor!`, `save`; checked names; attributes translated at their bounds; `Live` and `onchange`; the precompile workload over every recipe.
+- **`baselines/PlainPlots`, the control.** The same algorithms, canvas, interface and features without traits: a plot is a kind and a `Dict{Symbol, Any}` of attributes (read and set as properties), an axis holds `Vector{Any}` plots, and each drawing loop runs behind a function barrier.
+- **`test/`.** `runtests.jl` (61 tests: a user's data type, colour, marker, live source and recipe with children; attribute changes; refused names), `figures.jl` (the five reference figures, drawn by either library), `references/*.png`.
+- **`scripts/`.** `session.jl` and `session.sh` (the REPL session), `rows.jl`, `baseline.jl` and `errors.jl` (the session 26–27 rows), `env/` (an environment with both libraries).
 
-**Baselines:**
-- **`PlainPlots`** (`baselines/PlainPlots`, session 27): the same algorithms, canvas and interface without traits: a plot is a kind and a `Dict{Symbol, Any}` of attributes, an axis holds `Vector{Any}` plots, each drawing loop runs behind a function barrier; the same workload. (Observables were planned; they are left out, since nothing here updates reactively.) It separates what the design contributes from what small size contributes.
-- **Makie 0.24.16 with CairoMakie,** for the same plots.
-- **matplotlib** (`../experiments/interfaces/python/app.py`).
+Not in the tree, though `makie-rewrite.md` §9 plans them: a `Coords` trait per argument, `Transform`, `Layoutable` and a grid layout, `AxisValues` (dates, units, categories), a `Backend` trait (Cairo is the one backend, called directly), a typed compute graph (`Node{T}`), a `UserPlots` package (the user's types live in the tests and the session).
 
-## Measurements
+## How it is built
 
-| # | What | Prediction | Measured (session 26: `scripts/rows.jl`, one fresh process per cell, CSV, DataFrames and CairoMakie loaded before, after or not at all; single runs) |
-|---|---|---|---|
-| 1 | time to first PNG in a fresh process, load and work separately | work ≤ 0.3 s in every load order; patched loads no slower than stock | **session 27, view caches off: first PNG 18–22 ms in every order, patched and on the system image; `using TraitMakie` 0.24–0.28 s patched, 0.14–0.15 s on the system image (17 ms after CairoMakie).** Session 26, patched: `using TraitMakie` 0.24–0.26 s, first PNG (lines, scatter, save) 62–65 ms. Stock: 0.22–0.28 s and 4.6 s, 11.0 s with the loads before: without piece 5 every session compiles the policy's code, Cairo's included. Session 23, before facts: load 0.30–0.41 s, work 0.1–0.22 s |
-| 2 | load-order independence with CSV, DataFrames, ChurnStorm, BasePirate before, after, or not at all; stock and patched Julia | spread under 10% | **session 27, against PlainPlots** (`scripts/baseline.jl`, view caches off): first PNG with CSV, DataFrames and CairoMakie loaded first: TraitMakie 18.7–19.3 ms (19.9 ms without them), PlainPlots 99.5–101 ms (21–23 ms without): the plain library's code is invalidated, the trait library's is not. `g2all`: 0 policy CodeInstances lost over twelve loads. Earlier, patched: first PNG 62–65 ms with CSV, DataFrames, CairoMakie before, after or not at all (session 26); 87–97 ms with twelve packages (session 24). Stock: 4.6–11.0 s |
-| 3 | policy CodeInstances lost over each load | 0 | patched, under facts: 0 over twelve loads (`g2all`, session 24, again in session 27 after the day's TraitWorld changes) |
-| 4 | cost of a new data type, colour, recipe, from images and from the prompt, without and after big loads | tens of ms for a type that forwards to a known key | **against PlainPlots** (session 27, `scripts/baseline.jl`): PlainPlots takes a new data or colour type by one method (0.6–0.8 ms), then a first PNG of 39–40 ms and 87–119 ms; TraitMakie needs the conformance (0.10–0.23 s), then 52–58 ms and 118–134 ms; with the big loads first, on the system image, the same (52 ms, 118 ms), without it 6.6 s at the first new key. So a new type costs the trait library about 0.1–0.2 s more, the price of the declaration's checks. **Session 27, view caches off:** a new data type that forwards, `@implement` 0.10–0.14 s (0.22 s once on the system image after loads), first PNG 91–125 ms; a new colour type `@implement` 0.14–0.20 s, first PNG 96–178 ms. With the big loads first, the patched build pays 6.4 s at the first new key (the policy's compiler code, open-issues §1.3); on the system image 104 ms. Session 26: a new data type that forwards, `@implement` 0.61 s and first PNG 27 ms; after big loads `@implement` 1.63–1.68 s, PNG 27–36 ms. A new colour type: `@implement` 0.10–0.15 s, first PNG 114–116 ms, but 6.4 s with the loads before. `@implement` itself, and new keys after big loads, are the open problem (open-issues §4.5). Stock: `@implement` 1.0–1.5 s |
-| 5 | dispatch targets for phases A–G of x15/x16: the targets `verify_main` lists, and the run-time sites the policy leaves in PlotCore's code | tens, all listed; 0–2 per new shape | not yet. Session 27: in a session `verify_main` does not reach the workers (it treats the policy's `invoke` of a CodeInstance as a static call: 1,506 static calls, 0 trait sites), so the row needs the trimmed build, where the plain calls are compiled; deferred with the binaries (open-issues §3) |
-| 6 | colour shape change: `:red`, then a vector, then `Gradient` | works | session 27, view caches off, both builds: render 9 ms, to a vector 87–112 ms, to a `Gradient` 27–31 ms, to `:purple` 9 ms. Session 26, patched, in every order: render 9 ms; to a vector 40–48 ms, to a user's `Gradient` 28–29 ms at first use; to `:purple` 9 ms. Stock: to a vector 95 ms |
-| 7 | `verify_main` from `main` to drawing; `juliac --trim` | closed; a running binary under 20 MB | session 25 (`../experiments/aot/`): 4.07 MB, 0.05 s to the PNG, byte-identical to the session's; no holes on normal paths. Built with `--trim=unsafe-warn`; `--trim=safe` reports 26 errors from the machinery's slow paths |
-| 8 | errors: bad data, a wrong colour result, an undeclared operation in a recipe | at the entry or the conformance, naming the bound | session 27 (`scripts/errors.jl`): (1) bad data: at the entry, a `MethodError` with TraitWorld's hint "argument 2 of `add_lines!` is bounded by Positions; a String conforms to none of them", 29 lines, 9 frames; (2) a colour whose `rgba` returns three numbers: refused at `@implement` (`ImplementError`), 21 lines; (3) `length` on positions inside a user's recipe: at its definition, by definition checking (a warning at the prompt, an error at a package's build), "`length` has no method for a trait object carrying Positions", and again at the first render (`TraitUseError`, 25 lines, 11 frames). Open: the `MethodError`'s list of candidates shows the worker's machinery types |
-| 9 | run-time cost of dynamic positions: 10⁵-point lines updated 100 times; 50 plots redrawn | within 10% of PlainPlots | session 27 (`scripts/baseline.jl`, `baselines/PlainPlots`), patched and on the system image, both orders: a 10⁵-point line drawn 97–99 ms per drawing (PlainPlots 97–102 ms); 50 plots 82–89 ms (84–90 ms). **Equal within 5%**: the drawing is Cairo's |
-| 10 | precompile cost, image sizes, image load time (stock and patched) | larger images, stated | session 27 (`../experiments/demos/images.jl`): precompile 4.6 s patched, 6.1 s stock; native code 5.0 MB patched, 3.8 MB stock (piece 5 keeps the policy's code); `using` 0.28 s patched, 0.24 s stock |
+- Data, colours, markers and plots are traits. A plot keeps its data, colour and marker as `Dynamic` values: `Lines.color::ColorSpec` in a trait module means `Dynamic{ColorSpec}`. An axis keeps its plots as `Vector{Plot}`, that is `Vector{Dynamic{Plot}}`.
+- The loops over data are bounded functions (`pixels(pos::Positions, t)`, `drawmarkers(m::MarkerShape, …)`, `binned(s::Sample, bins)`), compiled per key when a dynamic value is opened.
+- **Attributes are fields.** `p.color = x` is Julia's `setproperty!`, which converts `x` to the field's type. The ordinary layer defines that conversion for its traits' `Dynamic` types: the boundary's translation at the bound, after the names are checked. So assignment from the prompt is an entry (`makie-rewrite.md` §8 item 7, settled).
+- **Recipes with children** keep their own data and attributes, and rebuild their children from them before each use (`refresh!`). A child therefore follows the parent's attributes and a live source. The recompute is unconditional; a typed compute graph that skips it when nothing changed is an optimization, not needed for correctness.
+- **Live data needs no new mechanism.** A `Live` value conforms by forwarding to its `val` field, and a trait object reads the user's object at its offsets, so every render sees the current value. The notification is ordinary code. This settles `makie-rewrite.md` §8 item 3 for pull-based updates: no `Live{X}` bound modifier is needed. What it does not give: a derived value cached between renders and invalidated by the source (that is the compute graph).
+- `lines(x, y)` converts `x, y` explicitly into one n × 2 matrix the bounds take (no bound spans several arguments).
 
-**Success:** rows 1–3 and 6–7 hold where PlainPlots fails them. Rows 4, 5 and 9 are reported as numbers, whatever they are.
+## Rows
 
-## Order of work
+"Shown" is correctness, session 30. "Earlier" is a measurement under TraitWorld's prototype policy (sessions 23–27; `scripts/rows.jl`, `scripts/baseline.jl`, single runs, script mode, see git history of this file for the full table). After the review of 2026-10-18 (`../writeup/reviews/2026-10-18-implementation-shape.md` §5), rows 1–3 measure the facts mode, a property of the compiler, until the control runs PlainPlots under `--compile-by-facts=all`.
 
-It starts after TraitDifferentialEquations has its first measurements.
-1. `PlotCore` with lines and scatter, `CairoBackend`, rows 1–3.
-2. `UserPlots` and rows 4–6.
-3. `verify_main` and the trimmed binary (row 7).
-4. The remaining primitives and recipes, rows 8–10.
+| # | What | Shown (session 30) | Earlier (prototype policy) | Whose property |
+|---|---|---|---|---|
+| 1 | first PNG after `using` | the session's first PNG | `using` 0.24–0.28 s; first PNG 18–22 ms in every load order (s27) | the compiler's (facts mode) |
+| 2 | load-order independence | — | 18.7–19.3 ms after CSV, DataFrames, CairoMakie; PlainPlots 99.5–101 ms (s27) | the compiler's, until the control |
+| 3 | compiled code lost to loads | — | 0 over twelve loads (`g2all`, s24, s27) | the compiler's |
+| 4 | a new data type, colour, marker, recipe | all four at the prompt (tests, session) | conformance 0.10–0.23 s, first PNG 50–130 ms; 6.4 s after big loads without the system image (s27) | the checks are traits'; the 6.4 s was the prototype's |
+| 5 | dispatch targets | — | not measured: `verify_main` does not reach workers in a session | traits' (declared targets) |
+| 6 | attribute shapes change | colour: symbol, tuple, vector of symbols or tuples, user's type; marker: symbol, vector, user's type; data, bins, step | colour changes 9–112 ms (s27) | traits' (`Dynamic`) |
+| 7 | trimmed binary | — | 4.07 MB, PNG byte-identical, `--trim=unsafe-warn` (s25, step 1's library) | traits' (target lists) |
+| 8 | errors that teach | unknown names list the choices; a non-conforming value names the bound | bad data at the entry naming the bound; a wrong `rgba` at `@implement`; an undeclared operation at the recipe's definition (s27, `scripts/errors.jl`) | traits' (checks) and the ordinary layer's |
+| 9 | run time of dynamic data | — | 10⁵-point line 97–99 ms per drawing, PlainPlots 97–102 ms: Cairo's stroke (s27) | — |
+| 10 | precompile, image size, load | — | 4.6 s, 5.0 MB, 0.28 s (s27, before step 2) | — |
+| 11 | recipes with children | `Stairs`, `Hist`, `Band`; a user's `Ribbon` and `Lollipop` | — | traits' (`Plot` over children) |
+| 12 | live data | `Live` replaced, a user's `Sensor` mutated in place, `onchange` redraws | — | the reference layout |
+| 13 | PNGs against references and the control | five figures pixel-identical to PlainPlots and to `test/references` | — | correctness |
 
-**Prerequisites in TraitWorld:**
-- `Dynamic{X}`;
-- lenses and trait fields;
-- associated types (`Positions{N, T}`);
-- definition checking with parameter archetypes;
-- printing frames by bound and key (done).
+## To measure after (D)
 
-**Running on the shared machine:** one Julia job at a time, niced; juliac builds alone, under the memory guard.
+At the REPL (`scripts/session.jl` as the driver), patched build, no system image, view caches off, with and without CSV, DataFrames and CairoMakie loaded first:
+- `using TraitMakie`, then the first PNG (rows 1, 2).
+- The first PNG of a new data type, colour, marker and user recipe defined at the prompt (row 4), against PlainPlots' one-method equivalents.
+- Each attribute change of row 6 and its next render.
+- A live update and its redraw (row 12).
+- The steady state of every recipe, against PlainPlots (row 9), including a 10⁵-value `hist` whose child is rebuilt at each render.
+- Compiled code lost per load, TraitMakie under `traits` against PlainPlots under `all` (rows 2, 3): the control that decides whose property rows 1–3 are.
+- Precompile time, image size and load time with the larger workload (row 10).
+- `verify_main` and a trimmed binary of the step 2 library, `--trim=safe` (rows 5, 7).
+
+## What TraitWorld should provide
+
+Found while building step 2; TraitMakie works around each without touching the machinery.
+- **`Base.convert(::Type{Dynamic{X}}, x) = Dynamic{X}(x)` for every trait.** Assigning a plain value to a `Dynamic{X}` field from ordinary code is a crossing, and should translate at `X` as a bound does. Without it, `setproperty!` on such a field raises a `MethodError` for `convert`. TraitMakie defines three methods per trait (`src/TraitMakie.jl`): the conversion, and two that resolve ambiguities with Base's `convert(::Type{T}, ::T)` and TraitWorld's `convert(::Type{Dynamic{X}}, ::TObj)`. A generic method in TraitWorld needs the same two companions.
+- **Forwarding for a whole family.** `@implement Positions Live{T} by val where {T}` is not supported ("forwarding for the whole family: not yet", `TraitWorld/test/like.jl:78`), so `Live` declares one conformance per parameter value (four).
+- **The bound error could list the conforming types.** "a String does not conform to ColorSpec" names the bound; listing the declared conformances (`Symbol`, `NTuple{4,Float64}`, …) would name the fix, as the ordinary layer's messages do.
+
+## Running
+
+- Tests: `julia --project=. -e 'using Pkg; Pkg.test()'`. `TRAITMAKIE_UPDATE_REFERENCES=1` rewrites `test/references/`.
+- The REPL session: `scripts/session.sh`.
+- On the shared machine: one Julia job at a time, niced, under the shared lock; `JULIA_TW_VIEWCACHE=0`.
