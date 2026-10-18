@@ -6,6 +6,7 @@ A plotting library written in the trait world: the second demonstrator that the 
 
 - **Step 2 is built and correct.** Nine plot types (lines, scatter, bars, vertical lines, polygons, text, and the recipes with children `stairs`, `hist`, `band`), marker shapes and per-point colours through `Dynamic`, `p.color = x` at the prompt, live data. 61 tests, five reference images, and a scripted REPL session (ten checks) pass.
 - **The control is equivalent.** PlainPlots has every feature, and draws the same pixels for all five reference figures.
+- **How it ran:** on the Julia build with parts (B) and (C), with `JULIA_TW_COMPILER_FACTS=0` (TraitWorld's own policy) and `JULIA_TW_VIEWCACHE=0`. **Not yet run with the compiler compiling trait modules by facts** (`JULIA_TW_COMPILER_FACTS` unset): every test, check and session needs a rerun there.
 - **Nothing was timed in session 30.** The foundation is changing: Julia's compiler gets parts (B) and (C), then (D) (`Dynamic` in the compiler), and TraitWorld's own policy is being removed. The numbers below are from sessions 23–27, under TraitWorld's prototype policy. They are history until re-measured (the list "To measure after (D)").
 
 ## What a user sees at the prompt
