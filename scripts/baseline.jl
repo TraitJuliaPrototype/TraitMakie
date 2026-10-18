@@ -32,10 +32,7 @@ row("a new colour type: first PNG", @elapsed P.save(joinpath(OUT, "c.png"), P.sc
 N = 10^5
 xN = collect(range(0.0, 100.0; length = N)); yN = sin.(xN)
 fN = P.lines(xN, yN; size = (1200, 800))
-data = fN.axis.plots[1] isa TraitWorld.Dynamic ? nothing : nothing
 P.save(joinpath(OUT, "n.png"), fN)
-M = LIB === :TraitMakie ? TraitWorld.opened(fN.axis.plots[1]) : nothing
-pos = LIB === :TraitMakie ? nothing : fN.axis.plots[1].attributes[:data]
 tn = @elapsed for k in 1:100
     if LIB === :TraitMakie
         P.recolor!(fN, 1, :blue)                     # the same work for both: the figure drawn again
