@@ -18,13 +18,13 @@ The user's criterion: interactivity as the user perceives it. A slow import foll
 - **New types at the prompt.** A data type in one line (`@implement Positions Track`), a colour or marker of the user's own (one method and `@implement`), a recipe of the user's own made of the library's recipes (`plot!(fig, Lollipop(x, y))`).
 - **Live data.** `lv = Live(data)`, `lines(lv)`, `lv[] = newdata`: the plot reads the current value at each render; `onchange(_ -> save(path, fig), lv)` redraws on every change. A user's own mutable type works the same way (`Sensor`, in the tests).
 - **Mistakes teach.** `p.color = :magenta` raises "unknown colour :magenta. The named colours are :black, :blue, … ; a colour may also be an RGB or RGBA tuple, a vector of colours (one per point), or a value of a type conforming to ColorSpec", and the plot keeps its colour. Unknown markers, steps, alignments and bin counts are refused the same way. A value of no conforming type is refused at the bound ("a String does not conform to ColorSpec"). Earlier (session 27, row 8): bad data refused at the entry naming the bound, a wrong colour result refused at `@implement`, an undeclared operation in a user's recipe reported at its definition.
-- **Earlier timings** (session 27, prototype policy, script mode): `using TraitMakie` 0.24–0.28 s, then the first PNG in 18–22 ms in every load order; a new data or colour type 0.10–0.23 s for the conformance and 50–130 ms for its first PNG. Under the criterion that is instant after a cheap import. Re-measure at the REPL after (D). (Session 29, fresh processes: "Measured in session 29".)
+- **Earlier timings** (session 27, prototype policy, script mode): `using TraitMakie` 0.24–0.28 s, then the first PNG in 18–22 ms in every load order; a new data or colour type 0.10–0.23 s for the implementation and 50–130 ms for its first PNG. Under the criterion that is instant after a cheap import. Re-measure at the REPL after (D). (Session 29, fresh processes: "Measured in session 29".)
 
 ## Scope: what is in the tree
 
 - **`src/PlotCore.jl`, the trait module.**
   - Traits: `Positions` (points by index), `Sample` (values a histogram bins), `ColorSpec` (a colour per point), `MarkerShape` (an outline per point), `Plot` (a recipe: `datalimits`, `draw!`, `setcolor!`).
-  - Conformances: `Matrix{Float64}` (n × 2) and `Vector{NTuple{2,Float64}}` as positions; `Vector{<:Real}` as a sample; `Symbol`, an RGBA tuple, a vector of either as colours; `Symbol` and `Vector{Symbol}` as markers (`:circle`, `:rect`, `:diamond`, `:utriangle`, `:cross`).
+  - Implementations: `Matrix{Float64}` (n × 2) and `Vector{NTuple{2,Float64}}` as positions; `Vector{<:Real}` as a sample; `Symbol`, an RGBA tuple, a vector of either as colours; `Symbol` and `Vector{Symbol}` as markers (`:circle`, `:rect`, `:diamond`, `:utriangle`, `:cross`).
   - Primitives: `Lines`, `Scatter`, `Bars`, `VLines`, `Poly`, `Labels`.
   - Recipes with children: `Stairs` (a `Lines`), `Hist` (a `Bars`), `Band` (a `Poly`).
   - An axis with limits, linear ticks, tick labels, a title and axis labels; Cairo called directly.
@@ -53,7 +53,7 @@ Not in the tree, though `makie-rewrite.md` §9 plans them: a `Coords` trait per 
 | 1 | first PNG after `using` | the session's first PNG | `using` 0.24–0.28 s; first PNG 18–22 ms in every load order (s27) | the compiler's (facts mode) |
 | 2 | load-order independence | — | 18.7–19.3 ms after CSV, DataFrames, CairoMakie; PlainPlots 99.5–101 ms (s27) | the compiler's, until the control |
 | 3 | compiled code lost to loads | — | 0 over twelve loads (`g2all`, s24, s27) | the compiler's |
-| 4 | a new data type, colour, marker, recipe | all four at the prompt (tests, session) | conformance 0.10–0.23 s, first PNG 50–130 ms; 6.4 s after big loads without the system image (s27) | the checks are traits'; the 6.4 s was the prototype's |
+| 4 | a new data type, colour, marker, recipe | all four at the prompt (tests, session) | implementation 0.10–0.23 s, first PNG 50–130 ms; 6.4 s after big loads without the system image (s27) | the checks are traits'; the 6.4 s was the prototype's |
 | 5 | dispatch targets | — | not measured: `verify_main` does not reach workers in a session | traits' (declared targets) |
 | 6 | attribute shapes change | colour: symbol, tuple, vector of symbols or tuples, user's type; marker: symbol, vector, user's type; data, bins, step | colour changes 9–112 ms (s27) | traits' (`Dynamic`) |
 | 7 | trimmed binary | — | 4.07 MB, PNG byte-identical, `--trim=unsafe-warn` (s25, step 1's library) | traits' (target lists) |
@@ -107,8 +107,8 @@ From [`../writeup/design/evidence.md`](../writeup/design/evidence.md) §1 and §
 
 Found while building step 2; TraitMakie works around each without touching the machinery.
 - **`Base.convert(::Type{Dynamic{X}}, x) = Dynamic{X}(x)` for every trait.** Assigning a plain value to a `Dynamic{X}` field from ordinary code is a crossing, and should translate at `X` as a bound does. Without it, `setproperty!` on such a field raises a `MethodError` for `convert`. TraitMakie defines three methods per trait (`src/TraitMakie.jl`): the conversion, and two that resolve ambiguities with Base's `convert(::Type{T}, ::T)` and TraitWorld's `convert(::Type{Dynamic{X}}, ::TObj)`. A generic method in TraitWorld needs the same two companions.
-- **Forwarding for a whole family.** `@implement Positions Live{T} by val where {T}` is not supported ("forwarding for the whole family: not yet", `TraitWorld/test/like.jl:78`), so `Live` declares one conformance per parameter value (four).
-- **The bound error could list the conforming types.** "a String does not conform to ColorSpec" names the bound; listing the declared conformances (`Symbol`, `NTuple{4,Float64}`, …) would name the fix, as the ordinary layer's messages do.
+- **Forwarding for a whole family.** `@implement Positions Live{T} by val where {T}` is not supported ("forwarding for the whole family: not yet", `TraitWorld/test/like.jl:78`), so `Live` declares one implementation per parameter value (four).
+- **The bound error could list the conforming types.** "a String does not conform to ColorSpec" names the bound; listing the declared implementations (`Symbol`, `NTuple{4,Float64}`, …) would name the fix, as the ordinary layer's messages do.
 
 ## Running
 
