@@ -11,7 +11,7 @@ p = scatter!(f, xs, cos.(xs))
 save(png("1"), f); _ok("first PNG", filesize(png("1")) > 1000)
 # a new data type: one line
 struct Track; name::String; pts::Vector{NTuple{2,Float64}}; end
-@implement Positions Track
+@implement Positions Track by pts
 tr = lines!(f, Track("t", [(0.0, 0.0), (7.0, 2.0)]); color = :green)
 _ok("a new data type", TraitMakie.datalimits(f.axis.plots[3]) == (0.0, 7.0, 0.0, 2.0))
 # attributes changed on plots already made: colour and marker change shape

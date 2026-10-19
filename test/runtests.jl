@@ -4,7 +4,7 @@ const PC = TraitMakie.PlotCore
 const Cairo = PC.Cairo
 
 struct Trajectory; name::String; pts::Vector{NTuple{2,Float64}}; end
-@implement Positions Trajectory                     # forwards to its one conforming field
+@implement Positions Trajectory by pts              # forwards to its field `pts`
 
 struct Gradient; from::NTuple{4,Float64}; to::NTuple{4,Float64}; n::Int; end
 TraitMakie.rgba(g::Gradient, i::Int) = (t = (i - 1) / max(g.n - 1, 1); g.from .+ t .* (g.to .- g.from))
@@ -15,7 +15,7 @@ TraitMakie.outline(s::Star, i::Int) = [(k % 2 == 0 ? 1.2 : 0.5) .* (sin(pi * k /
 @implement MarkerShape Star
 
 mutable struct Sensor; label::String; readings::Vector{NTuple{2,Float64}}; end
-@implement Positions Sensor                         # a live source of the user's own: read at each render
+@implement Positions Sensor by readings             # a live source of the user's own: read at each render
 
 "A user's recipe with children: a centre line and a band around it, made of the library's recipes."
 mutable struct Ribbon
