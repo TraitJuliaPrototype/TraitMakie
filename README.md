@@ -2,12 +2,13 @@
 
 A plotting library written in the trait world: the second demonstrator that the trait world works for a real library. It has Makie's shape at a small fraction of its size: traits for data, colours, markers and plots, recipes with children, attributes that change shape after a plot is made, and live data. Cairo draws the PNGs. The library's design is `../writeup/explorations/makie-rewrite.md` (written before keys; `src/PlotCore.jl` is the keys form).
 
-## Status (session 30, 2026-10-18)
+## Status (session 29, 2026-10-19)
 
 - **Step 2 is built and correct.** Nine plot types (lines, scatter, bars, vertical lines, polygons, text, and the recipes with children `stairs`, `hist`, `band`), marker shapes and per-point colours through `Dynamic`, `p.color = x` at the prompt, live data. 61 tests, five reference images, and a scripted REPL session (ten checks) pass.
 - **The control is equivalent.** PlainPlots has every feature, and draws the same pixels for all five reference figures.
-- **How it ran:** on the Julia build with parts (B) and (C), with `JULIA_TW_COMPILER_FACTS=0` (TraitWorld's own policy) and `JULIA_TW_VIEWCACHE=0`. **Not yet run with the compiler compiling trait modules by facts** (`JULIA_TW_COMPILER_FACTS` unset): every test, check and session needs a rerun there.
-- **Nothing was timed in session 30.** The foundation is changing: Julia's compiler gets parts (B) and (C), then (D) (`Dynamic` in the compiler), and TraitWorld's own policy is being removed. The numbers below are from sessions 23–27, under TraitWorld's prototype policy. They are history until re-measured (the list "To measure after (D)").
+- **Built on the facts+traits compiler:** julia-1.13 61852d8fb1 with TraitWorld 375a930. Julia's compiler compiles the trait modules by facts, and `Dynamic` operations are call-site splits (part D). The tests and the REPL session pass there.
+- **Measured in session 29**, in fresh processes, one run per load order: "Measured in session 29" below. The design repository's [`../writeup/design/evidence.md`](../writeup/design/evidence.md) §1 and §3 has the same numbers, with the build and the caveats.
+- The other numbers in this file are from sessions 23–27, under TraitWorld's prototype policy: history, before the facts compiler.
 
 ## What a user sees at the prompt
 
@@ -17,7 +18,7 @@ The user's criterion: interactivity as the user perceives it. A slow import foll
 - **New types at the prompt.** A data type in one line (`@implement Positions Track`), a colour or marker of the user's own (one method and `@implement`), a recipe of the user's own made of the library's recipes (`plot!(fig, Lollipop(x, y))`).
 - **Live data.** `lv = Live(data)`, `lines(lv)`, `lv[] = newdata`: the plot reads the current value at each render; `onchange(_ -> save(path, fig), lv)` redraws on every change. A user's own mutable type works the same way (`Sensor`, in the tests).
 - **Mistakes teach.** `p.color = :magenta` raises "unknown colour :magenta. The named colours are :black, :blue, … ; a colour may also be an RGB or RGBA tuple, a vector of colours (one per point), or a value of a type conforming to ColorSpec", and the plot keeps its colour. Unknown markers, steps, alignments and bin counts are refused the same way. A value of no conforming type is refused at the bound ("a String does not conform to ColorSpec"). Earlier (session 27, row 8): bad data refused at the entry naming the bound, a wrong colour result refused at `@implement`, an undeclared operation in a user's recipe reported at its definition.
-- **Earlier timings** (session 27, prototype policy, script mode): `using TraitMakie` 0.24–0.28 s, then the first PNG in 18–22 ms in every load order; a new data or colour type 0.10–0.23 s for the conformance and 50–130 ms for its first PNG. Under the criterion that is instant after a cheap import. Re-measure at the REPL after (D).
+- **Earlier timings** (session 27, prototype policy, script mode): `using TraitMakie` 0.24–0.28 s, then the first PNG in 18–22 ms in every load order; a new data or colour type 0.10–0.23 s for the conformance and 50–130 ms for its first PNG. Under the criterion that is instant after a cheap import. Re-measure at the REPL after (D). (Session 29, fresh processes: "Measured in session 29".)
 
 ## Scope: what is in the tree
 
@@ -45,9 +46,9 @@ Not in the tree, though `makie-rewrite.md` §9 plans them: a `Coords` trait per 
 
 ## Rows
 
-"Shown" is correctness, session 30. "Earlier" is a measurement under TraitWorld's prototype policy (sessions 23–27; `scripts/rows.jl`, `scripts/baseline.jl`, single runs, script mode, see git history of this file for the full table). After the review of 2026-10-18 (`../writeup/reviews/2026-10-18-implementation-shape.md` §5), rows 1–3 measure the facts mode, a property of the compiler, until the control runs PlainPlots under `--compile-by-facts=all`.
+"Shown" is correctness, session 29. "Earlier" is a measurement under TraitWorld's prototype policy (sessions 23–27; `scripts/rows.jl`, `scripts/baseline.jl`, single runs, script mode, see git history of this file for the full table). After the review of 2026-10-18 (`../writeup/reviews/2026-10-18-implementation-shape.md` §5), rows 1–3 measure the facts mode, a property of the compiler, until the control runs PlainPlots under `--compile-by-facts=all`.
 
-| # | What | Shown (session 30) | Earlier (prototype policy) | Whose property |
+| # | What | Shown (session 29) | Earlier (prototype policy) | Whose property |
 |---|---|---|---|---|
 | 1 | first PNG after `using` | the session's first PNG | `using` 0.24–0.28 s; first PNG 18–22 ms in every load order (s27) | the compiler's (facts mode) |
 | 2 | load-order independence | — | 18.7–19.3 ms after CSV, DataFrames, CairoMakie; PlainPlots 99.5–101 ms (s27) | the compiler's, until the control |
@@ -63,17 +64,44 @@ Not in the tree, though `makie-rewrite.md` §9 plans them: a `Coords` trait per 
 | 12 | live data | `Live` replaced, a user's `Sensor` mutated in place, `onchange` redraws | — | the reference layout |
 | 13 | PNGs against references and the control | five figures pixel-identical to PlainPlots and to `test/references` | — | correctness |
 
-## To measure after (D)
+The "Earlier" column is history, before the facts compiler. The session-29 numbers are in "Measured in session 29".
 
-At the REPL (`scripts/session.jl` as the driver), patched build, no system image, view caches off, with and without CSV, DataFrames and CairoMakie loaded first:
-- `using TraitMakie`, then the first PNG (rows 1, 2).
-- The first PNG of a new data type, colour, marker and user recipe defined at the prompt (row 4), against PlainPlots' one-method equivalents.
-- Each attribute change of row 6 and its next render.
+## Measured in session 29
+
+From [`../writeup/design/evidence.md`](../writeup/design/evidence.md) §1 and §3: julia-1.13 61852d8fb1, TraitWorld 375a930, the patched build. `scripts/rows.jl`, fresh processes, *n = 1* per load order; big loads = CSV, DataFrames, CairoMakie. One machine, shared with other jobs.
+
+| Row | No loads | Loads before | Loads after |
+|---|---|---|---|
+| `using TraitMakie` | 476 ms | 538 ms | 474 ms |
+| first PNG | 20.5 ms | 20.9 ms | 20.8 ms |
+| a new data type (forwarding): `@implement` / first PNG | 77 / 107 ms | 97 / 89 ms | 96 / 161 ms |
+| a new colour type: `@implement` / first PNG | 171 / 96 ms | 311 / 98 ms | 159 / 101 ms |
+| render / recolour to a vector / to `:purple` / to a gradient | 8.8 / 102 / 9.0 / 18 ms | 8.8 / 84 / 9.0 / 18 ms | 9.0 / 231 / 8.6 / 19 ms |
+
+- At the start of the phase: a new data type after the loads took 5.5 s and 2.1 s.
+- **A clean-case regression:** the forwarding `@implement` took 36 ms and its PNG 40 ms before the phase; probably the cost of compiling TraitWorld's machinery by facts, not yet measured by owner.
+- These rows are rows 1, 2, 4 and 6 of the table above, in script mode, not at the REPL.
+
+**The control: whose property is load protection** (`evidence.md` §1). The same work, then nine unrelated packages loaded (OffsetArrays, StatsBase, Unitful, IntervalArithmetic, Distributions, Interpolations, StaticArrays, CairoMakie, REPL), plain mode against `--compile-by-facts=all`:
+
+| | plain mode | `all` |
+|---|---|---|
+| PlainTables + TraitMakie: CodeInstances lost | 14 of 218 | **0 of 206** |
+| their work after the loads (repeated: 27.5 / 27.8 ms) | 96.1 ms | 29.4 ms |
+
+- Load protection is the facts rule's property, for any code, not traits'.
+- The 14 lost in plain mode are PlainTables'; TraitMakie lost none (session note `../session-notes/2026-10-18-29-reviews-and-decisions.md`). The control ran PlainTables, not PlainPlots.
+
+**Not measured yet** (at the REPL, `scripts/session.jl` as the driver; patched build):
+- Every row at the REPL: the rows above ran in fresh processes.
+- Row 4 for a marker and a user recipe defined at the prompt, and PlainPlots' one-method equivalents.
+- Row 6 for the other attribute changes (marker, data, bins, step) and their next render.
 - A live update and its redraw (row 12).
 - The steady state of every recipe, against PlainPlots (row 9), including a 10⁵-value `hist` whose child is rebuilt at each render.
-- Compiled code lost per load, TraitMakie under `traits` against PlainPlots under `all` (rows 2, 3): the control that decides whose property rows 1–3 are.
+- Compiled code lost per load, TraitMakie against PlainPlots under `all` (rows 2, 3).
 - Precompile time, image size and load time with the larger workload (row 10).
-- `verify_main` and a trimmed binary of the step 2 library, `--trim=safe` (rows 5, 7).
+- `verify_main` and a trimmed binary of the step 2 library, `--trim=safe` (rows 5, 7). The 4.07 MB binary of row 7 (session 25) was not rebuilt on the current compiler.
+- Diagnosis of the clean-case regression above (the design repository's `writeup/open-issues.md` §4.12).
 
 ## What TraitWorld should provide
 
