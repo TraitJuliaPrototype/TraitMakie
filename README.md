@@ -7,7 +7,7 @@ A plotting library written in the trait world: the second demonstrator that the 
 - **Step 2 is built and correct.** Nine plot types (lines, scatter, bars, vertical lines, polygons, text, and the recipes with children `stairs`, `hist`, `band`), marker shapes and per-point colours through `Dynamic`, `p.color = x` at the prompt, live data. 61 tests, five reference images, and a scripted REPL session (ten checks) pass.
 - **The control is equivalent.** PlainPlots has every feature, and draws the same pixels for all five reference figures.
 - **Built on the facts+traits compiler:** julia-1.13 61852d8fb1 with TraitWorld 375a930. Julia's compiler compiles the trait modules by facts, and `Dynamic` operations are call-site splits (part D). The tests and the REPL session pass there.
-- **Measured in session 29**, in fresh processes, one run per load order: "Measured in session 29" below. The design repository's [`../writeup/design/evidence.md`](../writeup/design/evidence.md) §1 and §3 has the same numbers, with the build and the caveats.
+- **Measured in session 29** (the build of 2026-10-19), in fresh processes, one run per load order: "Measured in session 29" below, this file's dated results. **The current numbers** are in the design repository's [`../writeup/design/evidence.md`](../writeup/design/evidence.md) §1 and §3, from the measurement round of 2026-10-20 (julia-1.13 3b8085c222, TraitWorld bed3782, 2 runs per load order).
 - The other numbers in this file are from sessions 23–27, under TraitWorld's prototype policy: history, before the facts compiler.
 
 ## What a user sees at the prompt
@@ -18,7 +18,7 @@ The user's criterion: interactivity as the user perceives it. A slow import foll
 - **New types at the prompt.** A data type in one line (`@implement Positions Track`), a colour or marker of the user's own (one method and `@implement`), a recipe of the user's own made of the library's recipes (`plot!(fig, Lollipop(x, y))`).
 - **Live data.** `lv = Live(data)`, `lines(lv)`, `lv[] = newdata`: the plot reads the current value at each render; `onchange(_ -> save(path, fig), lv)` redraws on every change. A user's own mutable type works the same way (`Sensor`, in the tests).
 - **Mistakes teach.** `p.color = :magenta` raises "unknown colour :magenta. The named colours are :black, :blue, … ; a colour may also be an RGB or RGBA tuple, a vector of colours (one per point), or a value of a type conforming to ColorSpec", and the plot keeps its colour. Unknown markers, steps, alignments and bin counts are refused the same way. A value of no conforming type is refused at the bound ("a String does not conform to ColorSpec"). Earlier (session 27, row 8): bad data refused at the entry naming the bound, a wrong colour result refused at `@implement`, an undeclared operation in a user's recipe reported at its definition.
-- **Earlier timings** (session 27, prototype policy, script mode): `using TraitMakie` 0.24–0.28 s, then the first PNG in 18–22 ms in every load order; a new data or colour type 0.10–0.23 s for the implementation and 50–130 ms for its first PNG. Under the criterion that is instant after a cheap import. Re-measure at the REPL after (D). (Session 29, fresh processes: "Measured in session 29".)
+- **Earlier timings** (session 27, prototype policy, script mode): `using TraitMakie` 0.24–0.28 s, then the first PNG in 18–22 ms in every load order; a new data or colour type 0.10–0.23 s for the implementation and 50–130 ms for its first PNG. Under the criterion that is instant after a cheap import. (D) is built; the rows have not been measured at the REPL since. In fresh processes: "Measured in session 29", and the current numbers in [`../writeup/design/evidence.md`](../writeup/design/evidence.md) §3.
 
 ## Scope: what is in the tree
 
@@ -68,7 +68,7 @@ The "Earlier" column is history, before the facts compiler. The session-29 numbe
 
 ## Measured in session 29
 
-From [`../writeup/design/evidence.md`](../writeup/design/evidence.md) §1 and §3: julia-1.13 61852d8fb1, TraitWorld 375a930, the patched build. `scripts/rows.jl`, fresh processes, *n = 1* per load order; big loads = CSV, DataFrames, CairoMakie. One machine, shared with other jobs.
+A dated table: julia-1.13 61852d8fb1, TraitWorld 375a930 (the build of 2026-10-19), the patched build. `scripts/rows.jl`, fresh processes, *n = 1* per load order; big loads = CSV, DataFrames, CairoMakie. One machine, shared with other jobs. The current numbers, from the round of 2026-10-20: [`../writeup/design/evidence.md`](../writeup/design/evidence.md) §3.
 
 | Row | No loads | Loads before | Loads after |
 |---|---|---|---|
@@ -79,10 +79,10 @@ From [`../writeup/design/evidence.md`](../writeup/design/evidence.md) §1 and §
 | render / recolour to a vector / to `:purple` / to a gradient | 8.8 / 102 / 9.0 / 18 ms | 8.8 / 84 / 9.0 / 18 ms | 9.0 / 231 / 8.6 / 19 ms |
 
 - At the start of the phase: a new data type after the loads took 5.5 s and 2.1 s.
-- **A clean-case regression:** the forwarding `@implement` took 36 ms and its PNG 40 ms before the phase; probably the cost of compiling TraitWorld's machinery by facts, not yet measured by owner.
+- **A clean-case regression:** the forwarding `@implement` took 36 ms and its PNG 40 ms before the phase; probably the cost of compiling TraitWorld's machinery by facts, not yet measured by owner. Gone in the round of 2026-10-20 (julia-1.13 3b8085c222, TraitWorld bed3782), through the machinery's code in TraitWorld's image (TraitWorld f7aea19): see [`../writeup/design/evidence.md`](../writeup/design/evidence.md) §3.
 - These rows are rows 1, 2, 4 and 6 of the table above, in script mode, not at the REPL.
 
-**The control: whose property is load protection** (`evidence.md` §1). The same work, then nine unrelated packages loaded (OffsetArrays, StatsBase, Unitful, IntervalArithmetic, Distributions, Interpolations, StaticArrays, CairoMakie, REPL), plain mode against `--compile-by-facts=all`:
+**The control: whose property is load protection** (session 29; the round's numbers are in `evidence.md` §1). The same work, then nine unrelated packages loaded (OffsetArrays, StatsBase, Unitful, IntervalArithmetic, Distributions, Interpolations, StaticArrays, CairoMakie, REPL), plain mode against `--compile-by-facts=all`:
 
 | | plain mode | `all` |
 |---|---|---|
@@ -101,7 +101,7 @@ From [`../writeup/design/evidence.md`](../writeup/design/evidence.md) §1 and §
 - Compiled code lost per load, TraitMakie against PlainPlots under `all` (rows 2, 3).
 - Precompile time, image size and load time with the larger workload (row 10).
 - `verify_main` and a trimmed binary of the step 2 library, `--trim=safe` (rows 5, 7). The 4.07 MB binary of row 7 (session 25) was not rebuilt on the current compiler.
-- Diagnosis of the clean-case regression above (the design repository's `writeup/open-issues.md` §4.12).
+- Diagnosis of the forwarding type's first PNG, still above the 40 ms measured before the phase (the design repository's `writeup/open-issues.md` §4.12, closed except this; numbers in `evidence.md` §3).
 
 ## What TraitWorld should provide
 
