@@ -17,7 +17,7 @@ row("first PNG: lines, scatter, save", @elapsed (f = P.lines(xs, sin.(xs); title
 @eval struct Trajectory; name::String; pts::Vector{NTuple{2,Float64}}; end
 @eval struct Gradient; from::NTuple{4,Float64}; to::NTuple{4,Float64}; n::Int; end
 if LIB === :TraitMakie
-    row("a new data type: conformance", @elapsed @eval @implement TraitMakie.Positions Trajectory)
+    row("a new data type: conformance", @elapsed @eval @implement TraitMakie.Positions Trajectory by pts)
     @eval TraitMakie.rgba(g::Gradient, i::Int) = (t = (i - 1) / max(g.n - 1, 1); g.from .+ t .* (g.to .- g.from))
     row("a new colour type: conformance", @elapsed @eval @implement TraitMakie.ColorSpec Gradient)
 else

@@ -17,7 +17,7 @@ row(1, "first PNG: lines, scatter, save", @elapsed (f = TM.lines(xs, sin.(xs); t
 LOADS == "after" && load_big()
 
 @eval struct Trajectory; name::String; pts::Vector{NTuple{2,Float64}}; end
-row(4, "a new data type: @implement (forwarding)", @elapsed @eval @implement TM.Positions Trajectory)
+row(4, "a new data type: @implement (forwarding)", @elapsed @eval @implement TM.Positions Trajectory by pts)
 tr = Trajectory("w", [(Float64(i), Float64(i)^2) for i in 1:20])
 row(4, "a new data type: first PNG", @elapsed TM.save(joinpath(OUT, "b.png"), TM.lines(tr)))
 @eval struct Gradient; from::NTuple{4,Float64}; to::NTuple{4,Float64}; n::Int; end
