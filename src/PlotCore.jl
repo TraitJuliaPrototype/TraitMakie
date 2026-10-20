@@ -180,7 +180,8 @@ writepng(c::Canvas, path::String) = (Cairo.write_to_png(c.surface, path); nothin
     setcolor!(p::Plot, c::Dynamic{ColorSpec})::Nothing
 end
 
-# the loops over data: bounded functions, so each runs compiled for the keys it is opened at
+# the loops over data: bounded functions; the plots hold their data as `Dynamic` fields, so the plots'
+# implementations pass them with `compiled_for`, and each loop runs compiled for the data's key
 function limits(pos::Positions)
     n = npoints(pos)
     xmin, xmax, ymin, ymax = Inf, -Inf, Inf, -Inf
@@ -292,30 +293,30 @@ function drawlabels(pos::Positions, c::Canvas, t::Transform2D, texts::Vector{Str
 end
 
 # opening a dynamic value at a bound selects the worker by dispatch: the result is asserted here
-datalimits(p::Lines) = limits(p.pos)::NTuple{4,Float64}
-datalimits(p::Scatter) = limits(p.pos)::NTuple{4,Float64}
-datalimits(p::Bars) = barlimits(p.pos, p.width)::NTuple{4,Float64}
-datalimits(p::VLines) = vlimits(p.pos)::NTuple{4,Float64}
-datalimits(p::Poly) = limits(p.pos)::NTuple{4,Float64}
-datalimits(p::Labels) = limits(p.pos)::NTuple{4,Float64}
+datalimits(p::Lines) = limits(compiled_for(p.pos))::NTuple{4,Float64}
+datalimits(p::Scatter) = limits(compiled_for(p.pos))::NTuple{4,Float64}
+datalimits(p::Bars) = barlimits(compiled_for(p.pos), p.width)::NTuple{4,Float64}
+datalimits(p::VLines) = vlimits(compiled_for(p.pos))::NTuple{4,Float64}
+datalimits(p::Poly) = limits(compiled_for(p.pos))::NTuple{4,Float64}
+datalimits(p::Labels) = limits(compiled_for(p.pos))::NTuple{4,Float64}
 function draw!(p::Lines, c::Canvas, t::Transform2D)
-    xs, ys = pixels(p.pos, t)::Tuple{Vector{Float64},Vector{Float64}}
+    xs, ys = pixels(compiled_for(p.pos), t)::Tuple{Vector{Float64},Vector{Float64}}
     polyline!(c, xs, ys, rgba(p.color, 1), p.linewidth)
     return nothing
 end
 function draw!(p::Scatter, c::Canvas, t::Transform2D)
-    xs, ys = pixels(p.pos, t)::Tuple{Vector{Float64},Vector{Float64}}
-    drawmarkers(p.marker, c, xs, ys, colors(p.color, length(xs))::Vector{NTuple{4,Float64}}, p.markersize / 2)::Nothing
+    xs, ys = pixels(compiled_for(p.pos), t)::Tuple{Vector{Float64},Vector{Float64}}
+    drawmarkers(compiled_for(p.marker), c, xs, ys, colors(compiled_for(p.color), length(xs))::Vector{NTuple{4,Float64}}, p.markersize / 2)::Nothing
     return nothing
 end
-draw!(p::Bars, c::Canvas, t::Transform2D) = drawbars(p.pos, c, t, p.color, p.width)::Nothing
-draw!(p::VLines, c::Canvas, t::Transform2D) = drawvlines(p.pos, c, t, p.color, p.linewidth)::Nothing
+draw!(p::Bars, c::Canvas, t::Transform2D) = drawbars(compiled_for(p.pos), c, t, compiled_for(p.color), p.width)::Nothing
+draw!(p::VLines, c::Canvas, t::Transform2D) = drawvlines(compiled_for(p.pos), c, t, compiled_for(p.color), p.linewidth)::Nothing
 function draw!(p::Poly, c::Canvas, t::Transform2D)
-    xs, ys = pixels(p.pos, t)::Tuple{Vector{Float64},Vector{Float64}}
+    xs, ys = pixels(compiled_for(p.pos), t)::Tuple{Vector{Float64},Vector{Float64}}
     polygon!(c, xs, ys, rgba(p.color, 1))
     return nothing
 end
-draw!(p::Labels, c::Canvas, t::Transform2D) = drawlabels(p.pos, c, t, p.texts, p.color, p.fontsize, p.align)::Nothing
+draw!(p::Labels, c::Canvas, t::Transform2D) = drawlabels(compiled_for(p.pos), c, t, p.texts, compiled_for(p.color), p.fontsize, p.align)::Nothing
 setcolor!(p::Lines, c::Dynamic{ColorSpec}) = (p.color = c; nothing)
 setcolor!(p::Scatter, c::Dynamic{ColorSpec}) = (p.color = c; nothing)
 setcolor!(p::Bars, c::Dynamic{ColorSpec}) = (p.color = c; nothing)
@@ -416,14 +417,14 @@ end
 function refresh!(s::Stairs)
     s.step in (:pre, :post, :center) || throw(ArgumentError("stairs: step is :pre, :post or :center, not :$(s.step)"))
     l = s.line
-    l.pos = Dynamic{Positions}(steppoints(s.pos, s.step)::Matrix{Float64})
+    l.pos = Dynamic{Positions}(steppoints(compiled_for(s.pos), s.step)::Matrix{Float64})
     l.color = s.color
     l.linewidth = s.linewidth
     return l
 end
 function refresh!(h::Hist)
     h.bins >= 1 || throw(ArgumentError("hist: bins must be at least 1, not $(h.bins)"))
-    pts, w = binned(h.values, h.bins)::Tuple{Matrix{Float64},Float64}
+    pts, w = binned(compiled_for(h.values), h.bins)::Tuple{Matrix{Float64},Float64}
     b = h.bars
     b.pos = Dynamic{Positions}(pts)
     b.width = w
@@ -432,7 +433,7 @@ function refresh!(h::Hist)
 end
 function refresh!(b::Band)
     p = b.poly
-    p.pos = Dynamic{Positions}(bandoutline(b.lower, b.upper)::Matrix{Float64})
+    p.pos = Dynamic{Positions}(bandoutline(compiled_for(b.lower), compiled_for(b.upper))::Matrix{Float64})
     p.color = b.color
     return p
 end
