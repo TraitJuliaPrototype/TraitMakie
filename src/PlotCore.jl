@@ -177,7 +177,7 @@ writepng(c::Canvas, path::String) = (Cairo.write_to_png(c.surface, path); nothin
 @trait Plot begin
     datalimits(p::Plot)::NTuple{4,Float64}
     draw!(p::Plot, c::Canvas, t::Transform2D)::Nothing
-    setcolor!(p::Plot, c::Dynamic{ColorSpec})::Nothing
+    setcolor!(p::Plot, c::Kept{ColorSpec})::Nothing
 end
 
 # the loops over data: bounded functions; the plots hold their data as `Dynamic` fields, so the plots'
@@ -207,8 +207,8 @@ colors(c::ColorSpec, n::Int) = NTuple{4,Float64}[rgba(c, i) for i in 1:n]
 
 "Lines through points. Its data and colour are kept as dynamic values: any conforming type."
 mutable struct Lines
-    pos::Positions                  # a trait's name in a field: Dynamic{Positions}
-    color::ColorSpec                # Dynamic{ColorSpec}
+    pos::Positions                  # a trait's name in a field: Kept{Positions}, the value with its attribute
+    color::ColorSpec                # Kept{ColorSpec}
     linewidth::Float64
 end
 "Markers at points: a shape (one, or one per point) and a colour (one, or one per point)."
@@ -216,7 +216,7 @@ mutable struct Scatter
     pos::Positions
     color::ColorSpec
     markersize::Float64
-    marker::MarkerShape             # Dynamic{MarkerShape}
+    marker::MarkerShape             # Kept{MarkerShape}
 end
 "Bars from zero to each point's y, centred at its x."
 mutable struct Bars
@@ -317,12 +317,12 @@ function draw!(p::Poly, c::Canvas, t::Transform2D)
     return nothing
 end
 draw!(p::Labels, c::Canvas, t::Transform2D) = drawlabels(compiled_for(p.pos), c, t, p.texts, compiled_for(p.color), p.fontsize, p.align)::Nothing
-setcolor!(p::Lines, c::Dynamic{ColorSpec}) = (p.color = c; nothing)
-setcolor!(p::Scatter, c::Dynamic{ColorSpec}) = (p.color = c; nothing)
-setcolor!(p::Bars, c::Dynamic{ColorSpec}) = (p.color = c; nothing)
-setcolor!(p::VLines, c::Dynamic{ColorSpec}) = (p.color = c; nothing)
-setcolor!(p::Poly, c::Dynamic{ColorSpec}) = (p.color = c; nothing)
-setcolor!(p::Labels, c::Dynamic{ColorSpec}) = (p.color = c; nothing)
+setcolor!(p::Lines, c::Kept{ColorSpec}) = (p.color = c; nothing)
+setcolor!(p::Scatter, c::Kept{ColorSpec}) = (p.color = c; nothing)
+setcolor!(p::Bars, c::Kept{ColorSpec}) = (p.color = c; nothing)
+setcolor!(p::VLines, c::Kept{ColorSpec}) = (p.color = c; nothing)
+setcolor!(p::Poly, c::Kept{ColorSpec}) = (p.color = c; nothing)
+setcolor!(p::Labels, c::Kept{ColorSpec}) = (p.color = c; nothing)
 @implement Plot Lines
 @implement Plot Scatter
 @implement Plot Bars
@@ -344,7 +344,7 @@ mutable struct Stairs
 end
 "A histogram of a sample in `bins` equal bins. Its child is a `Bars` of the counts."
 mutable struct Hist
-    values::Sample                  # Dynamic{Sample}
+    values::Sample                  # Kept{Sample}
     bins::Int
     color::ColorSpec
     bars::Bars                      # the child
@@ -443,16 +443,16 @@ datalimits(b::Band) = datalimits(refresh!(b))
 draw!(s::Stairs, c::Canvas, t::Transform2D) = draw!(refresh!(s), c, t)
 draw!(h::Hist, c::Canvas, t::Transform2D) = draw!(refresh!(h), c, t)
 draw!(b::Band, c::Canvas, t::Transform2D) = draw!(refresh!(b), c, t)
-setcolor!(s::Stairs, c::Dynamic{ColorSpec}) = (s.color = c; nothing)
-setcolor!(h::Hist, c::Dynamic{ColorSpec}) = (h.color = c; nothing)
-setcolor!(b::Band, c::Dynamic{ColorSpec}) = (b.color = c; nothing)
+setcolor!(s::Stairs, c::Kept{ColorSpec}) = (s.color = c; nothing)
+setcolor!(h::Hist, c::Kept{ColorSpec}) = (h.color = c; nothing)
+setcolor!(b::Band, c::Kept{ColorSpec}) = (b.color = c; nothing)
 @implement Plot Stairs
 @implement Plot Hist
 @implement Plot Band
 
 # --- figure, axis, rendering --------------------------------------------------------------------
 
-"An axis: its plots, kept as dynamic values (a trait's name in a container: Vector{Dynamic{Plot}})."
+"An axis: its plots, each kept with its attribute (a trait's name in a container: Vector{Kept{Plot}})."
 mutable struct Axis
     plots::Vector{Plot}
     title::String
@@ -465,61 +465,62 @@ struct Figure
     axis::Axis
 end
 "Give plot `k` another colour, of any conforming type: a symbol, a vector, a user's gradient (one dispatch per change)."
-recolor!(f::Figure, k::Int, c::ColorSpec) = setcolor!(f.axis.plots[k], Dynamic{ColorSpec}(c))
+recolor!(f::Figure, k::Int, c::Dynamic{ColorSpec}) = setcolor!(f.axis.plots[k], c)   # Dynamic unless the caller casts
 
 newfigure(width::Int, height::Int, title::String, xlabel::String, ylabel::String) =
-    Figure(width, height, Axis(Dynamic{Plot}[], title, xlabel, ylabel))
+    Figure(width, height, Axis(Plot[], title, xlabel, ylabel))
 newfigure(width::Int, height::Int, title::String) = newfigure(width, height, title, "", "")
 
-"Add a plot of any conforming type (a user's recipe) to the figure."
-add_plot!(f::Figure, p::Plot) = (push!(f.axis.plots, Dynamic{Plot}(p)); nothing)
-# the library's recipes, made from bounded arguments; each returns the plot, kept in the axis
-function add_lines!(f::Figure, pos::Positions, color::ColorSpec, linewidth::Float64)
-    p = Lines(Dynamic{Positions}(pos), Dynamic{ColorSpec}(color), linewidth)
+"Add a plot of any conforming type (a user's recipe) to the figure: `Dynamic` unless the caller casts it."
+add_plot!(f::Figure, p::Dynamic{Plot}) = (push!(f.axis.plots, p); nothing)
+# the library's recipes, made from bounded arguments, `Dynamic` by default (compiled once) unless the
+# caller casts them; each returns the plot, kept in the axis
+function add_lines!(f::Figure, pos::Dynamic{Positions}, color::Dynamic{ColorSpec}, linewidth::Float64)
+    p = Lines(pos, color, linewidth)
     push!(f.axis.plots, Dynamic{Plot}(p))
     return p
 end
-function add_scatter!(f::Figure, pos::Positions, color::ColorSpec, markersize::Float64, marker::MarkerShape)
-    p = Scatter(Dynamic{Positions}(pos), Dynamic{ColorSpec}(color), markersize, Dynamic{MarkerShape}(marker))
+function add_scatter!(f::Figure, pos::Dynamic{Positions}, color::Dynamic{ColorSpec}, markersize::Float64, marker::Dynamic{MarkerShape})
+    p = Scatter(pos, color, markersize, marker)
     push!(f.axis.plots, Dynamic{Plot}(p))
     return p
 end
-function add_bars!(f::Figure, pos::Positions, color::ColorSpec, width::Float64)
-    p = Bars(Dynamic{Positions}(pos), Dynamic{ColorSpec}(color), width)
+function add_bars!(f::Figure, pos::Dynamic{Positions}, color::Dynamic{ColorSpec}, width::Float64)
+    p = Bars(pos, color, width)
     push!(f.axis.plots, Dynamic{Plot}(p))
     return p
 end
-function add_vlines!(f::Figure, pos::Positions, color::ColorSpec, linewidth::Float64)
-    p = VLines(Dynamic{Positions}(pos), Dynamic{ColorSpec}(color), linewidth)
+function add_vlines!(f::Figure, pos::Dynamic{Positions}, color::Dynamic{ColorSpec}, linewidth::Float64)
+    p = VLines(pos, color, linewidth)
     push!(f.axis.plots, Dynamic{Plot}(p))
     return p
 end
-function add_poly!(f::Figure, pos::Positions, color::ColorSpec)
-    p = Poly(Dynamic{Positions}(pos), Dynamic{ColorSpec}(color))
+function add_poly!(f::Figure, pos::Dynamic{Positions}, color::Dynamic{ColorSpec})
+    p = Poly(pos, color)
     push!(f.axis.plots, Dynamic{Plot}(p))
     return p
 end
-function add_labels!(f::Figure, pos::Positions, texts::Vector{String}, color::ColorSpec, fontsize::Float64, align::Symbol)
-    p = Labels(Dynamic{Positions}(pos), texts, Dynamic{ColorSpec}(color), fontsize, align)
+function add_labels!(f::Figure, pos::Dynamic{Positions}, texts::Vector{String}, color::Dynamic{ColorSpec}, fontsize::Float64, align::Symbol)
+    p = Labels(pos, texts, color, fontsize, align)
     push!(f.axis.plots, Dynamic{Plot}(p))
     return p
 end
 const NOPOINTS = Matrix{Float64}(undef, 0, 2)
-function add_stairs!(f::Figure, pos::Positions, step::Symbol, color::ColorSpec, linewidth::Float64)
-    c = Dynamic{ColorSpec}(color)
-    p = Stairs(Dynamic{Positions}(pos), step, c, linewidth, Lines(Dynamic{Positions}(NOPOINTS), c, linewidth))
+function add_stairs!(f::Figure, pos::Dynamic{Positions}, step::Symbol, color::Dynamic{ColorSpec}, linewidth::Float64)
+    c = color
+    p = Stairs(pos, step, c, linewidth, Lines(Dynamic{Positions}(NOPOINTS), c, linewidth))
     push!(f.axis.plots, Dynamic{Plot}(p))
     return p
 end
-function add_hist!(f::Figure, values::Sample, bins::Int, color::ColorSpec)
-    c = Dynamic{ColorSpec}(color)
-    p = Hist(Dynamic{Sample}(values), bins, c, Bars(Dynamic{Positions}(NOPOINTS), c, 1.0))
+function add_hist!(f::Figure, values::Dynamic{Sample}, bins::Int, color::Dynamic{ColorSpec})
+    c = color
+    p = Hist(values, bins, c, Bars(Dynamic{Positions}(NOPOINTS), c, 1.0))
     push!(f.axis.plots, Dynamic{Plot}(p))
     return p
 end
-function add_band!(f::Figure, lower::Positions, upper::Positions, color::ColorSpec)
-    c = Dynamic{ColorSpec}(color)
-    p = Band(Dynamic{Positions}(lower), Dynamic{Positions}(upper), c, Poly(Dynamic{Positions}(NOPOINTS), c))
+function add_band!(f::Figure, lower::Dynamic{Positions}, upper::Dynamic{Positions}, color::Dynamic{ColorSpec})
+    c = color
+    p = Band(lower, upper, c, Poly(Dynamic{Positions}(NOPOINTS), c))
     push!(f.axis.plots, Dynamic{Plot}(p))
     return p
 end

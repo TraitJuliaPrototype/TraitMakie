@@ -57,21 +57,23 @@ _sample(x) = x                                      # a user's type conforming t
 
 # --- attributes: a value assigned to a plot's field is translated at the field's bound -----------
 #
-# A recipe's attribute that may change shape is a field of type `Dynamic{X}`. Julia's `setproperty!`
-# converts an assigned value to the field's type; these methods make that conversion the
-# boundary's translation at `X` (after the ordinary layer's checks), so `p.color = :red`,
+# A recipe's attribute that may change shape is a field of a trait's name, `Kept{X}`. Julia's
+# `setproperty!` converts an assigned value to the field's type; these methods make that conversion
+# the boundary's translation at `X` (after the ordinary layer's checks), so `p.color = :red`,
 # `p.color = [(1, 0, 0, 1), …]`, `p.marker = :rect`, `p.pos = (x, y)` work at the prompt, for the
-# library's recipes and a user's alike. (A general `convert(::Type{Dynamic{X}}, x)` belongs in
-# TraitWorld; see README.md, "What TraitWorld should provide".)
+# library's recipes and a user's alike. A plain value gets the trait's default there, as TraitWorld's
+# own conversion gives it; a held value or a cast keeps its attribute. (TraitWorld converts a plain
+# value for every trait; these methods add the shape translation.)
 _shape(::Type{ColorSpec}, x) = _color(x)
 _shape(::Type{MarkerShape}, x) = _marker(x)
 _shape(::Type{Positions}, xy::Tuple{AbstractVector,AbstractVector}) = _xy(xy[1], xy[2])
 _shape(::Type{Positions}, x) = x
 _shape(::Type{Sample}, x) = _sample(x)
 for X in (ColorSpec, MarkerShape, Positions, Sample)
-    @eval Base.convert(::Type{Dynamic{$X}}, x) = Dynamic{$X}(_shape($X, x))
-    @eval Base.convert(::Type{Dynamic{$X}}, x::Dynamic{$X}) = x
-    @eval Base.convert(::Type{Dynamic{$X}}, x::TObj) = Dynamic{$X}(x)
+    @eval Base.convert(::Type{Kept{$X}}, x) = Kept{$X}(_shape($X, x))     # a plain value: the trait's default
+    @eval Base.convert(::Type{Kept{$X}}, x::Kept{$X}) = x
+    @eval Base.convert(::Type{Kept{$X}}, x::Union{TObj,Dynamic{$X},Compiled{$X}}) = Kept{$X}(x)
+    @eval Base.convert(::Type{Kept{$X}}, x::Union{TraitWorld.CompiledFor,TraitWorld.WithDynamic}) = Kept{$X}(x)
 end
 
 # --- the ordinary interface --------------------------------------------------------------------------

@@ -37,7 +37,7 @@ Not in the tree, though `makie-rewrite.md` §9 plans them: a `Coords` trait per 
 
 ## How it is built
 
-- Data, colours, markers and plots are traits. A plot keeps its data, colour and marker as `Dynamic` values: `Lines.color::ColorSpec` in a trait module means `Dynamic{ColorSpec}`. An axis keeps its plots as `Vector{Plot}`, that is `Vector{Dynamic{Plot}}`.
+- Data, colours, markers and plots are traits. A plot keeps its data, colour and marker with their attribute: `Lines.color::ColorSpec` in a trait module means `Kept{ColorSpec}`. The recipes declare `Dynamic` as the default on their bounds (`add_lines!(f, pos::Dynamic{Positions}, …)`), so a plot is compiled once unless the caller casts its data with `compiled_for`. An axis keeps its plots as `Vector{Plot}`, that is `Vector{Kept{Plot}}`.
 - The loops over data are bounded functions (`pixels(pos::Positions, t)`, `drawmarkers(m::MarkerShape, …)`, `binned(s::Sample, bins)`), compiled per key: the plots hold their data as `Dynamic` fields and pass them with `compiled_for`.
 - **Attributes are fields.** `p.color = x` is Julia's `setproperty!`, which converts `x` to the field's type. The ordinary layer defines that conversion for its traits' `Dynamic` types: the boundary's translation at the bound, after the names are checked. So assignment from the prompt is an entry (`makie-rewrite.md` §8 item 7, settled).
 - **Recipes with children** keep their own data and attributes, and rebuild their children from them before each use (`refresh!`). A child therefore follows the parent's attributes and a live source. The recompute is unconditional; a typed compute graph that skips it when nothing changed is an optimization, not needed for correctness.
@@ -106,7 +106,7 @@ A dated table: julia-1.13 61852d8fb1, TraitWorld 375a930 (the build of 2026-10-1
 ## What TraitWorld should provide
 
 Found while building step 2; TraitMakie works around each without touching the machinery.
-- **`Base.convert(::Type{Dynamic{X}}, x) = Dynamic{X}(x)` for every trait.** Assigning a plain value to a `Dynamic{X}` field from ordinary code is a crossing, and should translate at `X` as a bound does. Without it, `setproperty!` on such a field raises a `MethodError` for `convert`. TraitMakie defines three methods per trait (`src/TraitMakie.jl`): the conversion, and two that resolve ambiguities with Base's `convert(::Type{T}, ::T)` and TraitWorld's `convert(::Type{Dynamic{X}}, ::TObj)`. A generic method in TraitWorld needs the same two companions.
+- **A conversion of a plain value to `Kept{X}` that translates its shape first** (a symbol to a colour, `(x, y)` to positions). TraitWorld converts a plain value for every trait, to the trait's default; TraitMakie adds the shape translation with four methods per trait (`src/TraitMakie.jl`): the conversion of a plain value, and three that resolve ambiguities with Base's `convert(::Type{T}, ::T)` and TraitWorld's conversions of trait objects, held values, casts and plain values.
 - **Forwarding for a whole family.** `@implement Positions Live{T} by val where {T}` is not supported ("forwarding for the whole family: not yet", `TraitWorld/test/like.jl:78`), so `Live` declares one implementation per parameter value (four).
 - **The bound error could list the conforming types.** "a String does not conform to ColorSpec" names the bound; listing the declared implementations (`Symbol`, `NTuple{4,Float64}`, …) would name the fix, as the ordinary layer's messages do.
 

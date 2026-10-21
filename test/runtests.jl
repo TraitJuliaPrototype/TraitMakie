@@ -25,14 +25,14 @@ end
 function Ribbon(x::Vector{Float64}, y::Vector{Float64}, halfwidth::Float64; color = :blue)
     m = hcat(x, y)
     band = Band(hcat(x, y .- halfwidth), hcat(x, y .+ halfwidth), (0.5, 0.5, 0.5, 0.3), Poly(zeros(0, 2), :gray))
-    return Ribbon(Lines(m, color, 2.0), band)       # fields of type Dynamic{X} take plain values (converted at X)
+    return Ribbon(Lines(m, color, 2.0), band)       # fields of a trait's name take plain values (converted at X)
 end
 function TraitMakie.datalimits(r::Ribbon)
     a, b = TraitMakie.datalimits(r.center), TraitMakie.datalimits(r.band)
     return (min(a[1], b[1]), max(a[2], b[2]), min(a[3], b[3]), max(a[4], b[4]))
 end
 TraitMakie.PlotCore.draw!(r::Ribbon, c::PC.Canvas, t::PC.Transform2D) = (PC.draw!(r.band, c, t); PC.draw!(r.center, c, t))
-TraitMakie.PlotCore.setcolor!(r::Ribbon, c::Dynamic{ColorSpec}) = (r.center.color = c; nothing)
+TraitMakie.PlotCore.setcolor!(r::Ribbon, c::Kept{ColorSpec}) = (r.center.color = c; nothing)
 @implement Plot Ribbon
 
 "The pixels of a PNG file (ARGB, one UInt32 each), as a width × height matrix."
@@ -115,7 +115,7 @@ end
     xs = collect(1.0:10.0)
     f = figure()
     p = scatter!(f, xs, xs)
-    @test p isa Scatter && p.color isa Dynamic{ColorSpec}
+    @test p isa Scatter && p.color isa Kept{ColorSpec} && !getfield(p.color, :compiled)   # the library's default at its bound
     for c in (:red, (0.1, 0.2, 0.3), (0.1, 0.2, 0.3, 0.5), [:red, :blue, :red, :blue, :red, :blue, :red, :blue, :red, :blue],
               [(0.0, 0.0, 0.0, 1.0) for _ in xs], Gradient((1.0, 0.0, 0.0, 1.0), (0.0, 0.0, 1.0, 1.0), 10))
         p.color = c                                      # each a different shape of colour
