@@ -58,8 +58,12 @@ const NAMED = Dict{Symbol,NTuple{4,Float64}}(
     :black => (0.0, 0.0, 0.0, 1.0), :white => (1.0, 1.0, 1.0, 1.0), :red => (0.85, 0.15, 0.15, 1.0),
     :green => (0.15, 0.6, 0.2, 1.0), :blue => (0.12, 0.35, 0.8, 1.0), :orange => (0.95, 0.55, 0.1, 1.0),
     :gray => (0.5, 0.5, 0.5, 1.0), :purple => (0.5, 0.2, 0.65, 1.0))
+# a name is a colour only if it is one of the named colours: an unknown name is refused where it is used
+_named_rgba(c::Symbol) = get(NAMED, c) do
+    throw(ArgumentError("unknown colour :$c. The named colours are $(join(sort!([":$k" for k in keys(NAMED)]), ", ")); a colour may also be an RGB or RGBA tuple, a vector of colours (one per point), or a value of a type conforming to ColorSpec"))
+end
 @implement ColorSpec Symbol begin
-    rgba(c, i) = get(NAMED, c, (0.0, 0.0, 0.0, 1.0))
+    rgba(c, i) = _named_rgba(c)
 end
 @implement ColorSpec NTuple{4,Float64} begin
     rgba(c, i) = c
@@ -68,7 +72,7 @@ end
     rgba(c, i) = c[i]
 end
 @implement ColorSpec Vector{Symbol} begin
-    rgba(c, i) = get(NAMED, c[i], (0.0, 0.0, 0.0, 1.0))
+    rgba(c, i) = _named_rgba(c[i])
 end
 
 "A marker's outline for point `i`: a closed polygon around (0, 0) of radius about 1, in pixels' orientation (y down)."
@@ -82,11 +86,14 @@ const MARKERS = Dict{Symbol,Vector{NTuple{2,Float64}}}(
     :utriangle => [(0.0, -1.2), (1.1, 0.8), (-1.1, 0.8)],
     :cross => [(-0.35, -1.0), (0.35, -1.0), (0.35, -0.35), (1.0, -0.35), (1.0, 0.35), (0.35, 0.35),
                (0.35, 1.0), (-0.35, 1.0), (-0.35, 0.35), (-1.0, 0.35), (-1.0, -0.35), (-0.35, -0.35)])
+_named_outline(m::Symbol) = get(MARKERS, m) do
+    throw(ArgumentError("unknown marker :$m. The named markers are $(join(sort!([":$k" for k in keys(MARKERS)]), ", ")); a marker may also be a vector of markers or a value of a type conforming to MarkerShape"))
+end
 @implement MarkerShape Symbol begin
-    outline(m, i) = get(MARKERS, m, MARKERS[:circle])
+    outline(m, i) = _named_outline(m)
 end
 @implement MarkerShape Vector{Symbol} begin
-    outline(m, i) = get(MARKERS, m[i], MARKERS[:circle])
+    outline(m, i) = _named_outline(m[i])
 end
 
 # --- the canvas: Cairo's surface and context, and the transform from data to pixels ------------------

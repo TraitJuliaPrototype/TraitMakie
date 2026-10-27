@@ -137,11 +137,17 @@ end
     s.color = :orange
     @test isfile(save(png("stairs"), f))
     @test PC.rgba(s.line.color, 1) == PC.NAMED[:orange]  # the child took the parent's colour at the render
-    # names that do not exist are refused where they are given, and the message lists the choices
-    e = try; p.color = :magenta; nothing; catch e; e; end
+    # a name is a colour or a marker of its own (`Symbol` implements both): stored as it is, refused where it
+    # is used, at the render, and the message lists the choices (the library's conversion is for values that
+    # do not conform, traits reference §7.3)
+    p.color = :magenta
+    e = try; save(png("bad"), f); nothing; catch e; e; end
     @test e isa ArgumentError && occursin(":purple", e.msg) && occursin("ColorSpec", e.msg)
-    e = try; p.marker = :hexagon; nothing; catch e; e; end
+    p.color = :red
+    p.marker = :hexagon
+    e = try; save(png("bad"), f); nothing; catch e; e; end
     @test e isa ArgumentError && occursin(":diamond", e.msg)
+    p.marker = :circle
     @test_throws ArgumentError scatter!(f, xs, xs; color = :magenta)
     @test_throws ArgumentError stairs!(f, xs, xs; step = :sideways)
     @test_throws ArgumentError hist!(f, xs; bins = 0)
