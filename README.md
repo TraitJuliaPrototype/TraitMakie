@@ -101,7 +101,7 @@ A dated table: julia-1.13 61852d8fb1, TraitWorld 375a930 (the build of 2026-10-1
 - Compiled code lost per load, TraitMakie against PlainPlots under `all` (rows 2, 3).
 - Precompile time, image size and load time with the larger workload (row 10).
 - `verify_main` and a trimmed binary of the step 2 library, `--trim=safe` (rows 5, 7). The 4.07 MB binary of row 7 (session 25) was not rebuilt on the current compiler.
-- Diagnosis of the forwarding type's first PNG, still above the 40 ms measured before the phase (the design repository's `writeup/open-issues.md` §4.12, closed except this; numbers in `evidence.md` §3).
+- Diagnosis of the forwarding type's first PNG, still above the 40 ms measured before the phase (the design repository's work queue, W-7; numbers in `evidence.md` §3).
 
 ## What TraitWorld should provide
 
