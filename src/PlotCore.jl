@@ -58,12 +58,20 @@ const NAMED = Dict{Symbol,NTuple{4,Float64}}(
     :black => (0.0, 0.0, 0.0, 1.0), :white => (1.0, 1.0, 1.0, 1.0), :red => (0.85, 0.15, 0.15, 1.0),
     :green => (0.15, 0.6, 0.2, 1.0), :blue => (0.12, 0.35, 0.8, 1.0), :orange => (0.95, 0.55, 0.1, 1.0),
     :gray => (0.5, 0.5, 0.5, 1.0), :purple => (0.5, 0.2, 0.65, 1.0))
-# a name is a colour only if it is one of the named colours: an unknown name is refused where it is used
-_named_rgba(c::Symbol) = get(NAMED, c) do
-    throw(ArgumentError("unknown colour :$c. The named colours are $(join(sort!([":$k" for k in keys(NAMED)]), ", ")); a colour may also be an RGB or RGBA tuple, a vector of colours (one per point), or a value of a type conforming to ColorSpec"))
+_names(d) = join((":" * string(k) for k in sort!(collect(keys(d)))), ", ")
+"""
+A named colour. A name is a colour only if it is one of the named colours, so the name is checked when the
+value is made: a type conforms to `ColorSpec` only where each of its values is a colour (`Symbol` does not).
+"""
+struct ColorName
+    name::Symbol
+    function ColorName(c::Symbol)
+        haskey(NAMED, c) || throw(ArgumentError("unknown colour :$c. The named colours are $(_names(NAMED)); a colour may also be an RGB or RGBA tuple, a vector of colours (one per point), or a value of a type conforming to ColorSpec"))
+        return new(c)
+    end
 end
-@implement ColorSpec Symbol begin
-    rgba(c, i) = _named_rgba(c)
+@implement ColorSpec ColorName begin
+    rgba(c, i) = NAMED[c.name]
 end
 @implement ColorSpec NTuple{4,Float64} begin
     rgba(c, i) = c
@@ -71,8 +79,8 @@ end
 @implement ColorSpec Vector{NTuple{4,Float64}} begin
     rgba(c, i) = c[i]
 end
-@implement ColorSpec Vector{Symbol} begin
-    rgba(c, i) = _named_rgba(c[i])
+@implement ColorSpec Vector{ColorName} begin
+    rgba(c, i) = NAMED[c[i].name]
 end
 
 "A marker's outline for point `i`: a closed polygon around (0, 0) of radius about 1, in pixels' orientation (y down)."
@@ -86,14 +94,19 @@ const MARKERS = Dict{Symbol,Vector{NTuple{2,Float64}}}(
     :utriangle => [(0.0, -1.2), (1.1, 0.8), (-1.1, 0.8)],
     :cross => [(-0.35, -1.0), (0.35, -1.0), (0.35, -0.35), (1.0, -0.35), (1.0, 0.35), (0.35, 0.35),
                (0.35, 1.0), (-0.35, 1.0), (-0.35, 0.35), (-1.0, 0.35), (-1.0, -0.35), (-0.35, -0.35)])
-_named_outline(m::Symbol) = get(MARKERS, m) do
-    throw(ArgumentError("unknown marker :$m. The named markers are $(join(sort!([":$k" for k in keys(MARKERS)]), ", ")); a marker may also be a vector of markers or a value of a type conforming to MarkerShape"))
+"A named marker, checked when it is made, as a `ColorName` is."
+struct MarkerName
+    name::Symbol
+    function MarkerName(m::Symbol)
+        haskey(MARKERS, m) || throw(ArgumentError("unknown marker :$m. The markers are $(_names(MARKERS)), a vector of them (one per point), or a value of a type conforming to MarkerShape"))
+        return new(m)
+    end
 end
-@implement MarkerShape Symbol begin
-    outline(m, i) = _named_outline(m)
+@implement MarkerShape MarkerName begin
+    outline(m, i) = MARKERS[m.name]
 end
-@implement MarkerShape Vector{Symbol} begin
-    outline(m, i) = _named_outline(m[i])
+@implement MarkerShape Vector{MarkerName} begin
+    outline(m, i) = MARKERS[m[i].name]
 end
 
 # --- the canvas: Cairo's surface and context, and the transform from data to pixels ------------------

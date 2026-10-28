@@ -24,7 +24,7 @@ The user's criterion: interactivity as the user perceives it. A slow import foll
 
 - **`src/PlotCore.jl`, the trait module.**
   - Traits: `Positions` (points by index), `Sample` (values a histogram bins), `ColorSpec` (a colour per point), `MarkerShape` (an outline per point), `Plot` (a recipe: `datalimits`, `draw!`, `setcolor!`).
-  - Implementations: `Matrix{Float64}` (n × 2) and `Vector{NTuple{2,Float64}}` as positions; `Vector{<:Real}` as a sample; `Symbol`, an RGBA tuple, a vector of either as colours; `Symbol` and `Vector{Symbol}` as markers (`:circle`, `:rect`, `:diamond`, `:utriangle`, `:cross`).
+  - Implementations: `Matrix{Float64}` (n × 2) and `Vector{NTuple{2,Float64}}` as positions; `Vector{<:Real}` as a sample; `ColorName` (a named colour, checked when it is made), an RGBA tuple, a vector of either as colours; `MarkerName` and `Vector{MarkerName}` as markers (`:circle`, `:rect`, `:diamond`, `:utriangle`, `:cross`). `Symbol` conforms to neither: the ordinary layer translates a name to a `ColorName` or `MarkerName`, at a keyword and at an assignment (`p.color = :red`), so an unknown name is refused where it is given.
   - Primitives: `Lines`, `Scatter`, `Bars`, `VLines`, `Poly`, `Labels`.
   - Recipes with children: `Stairs` (a `Lines`), `Hist` (a `Bars`), `Band` (a `Poly`).
   - An axis with limits, linear ticks, tick labels, a title and axis labels; Cairo called directly.
@@ -105,10 +105,8 @@ A dated table: julia-1.13 61852d8fb1, TraitWorld 375a930 (the build of 2026-10-1
 
 ## What TraitWorld should provide
 
-Found while building step 2; TraitMakie works around each without touching the machinery.
-- **A conversion of a plain value to `Kept{X}` that translates its shape first** (a symbol to a colour, `(x, y)` to positions). TraitWorld converts a plain value for every trait, to the trait's default; TraitMakie adds the shape translation with four methods per trait (`src/TraitMakie.jl`): the conversion of a plain value, and three that resolve ambiguities with Base's `convert(::Type{T}, ::T)` and TraitWorld's conversions of trait objects, held values, casts and plain values.
+Found while building step 2; TraitMakie works around it without touching the machinery.
 - **Forwarding for a whole family.** `@implement Positions Live{T} by val where {T}` is not supported ("forwarding for the whole family: not yet", `TraitWorld/test/like.jl:78`), so `Live` declares one implementation per parameter value (four).
-- **The bound error could list the conforming types.** "a String does not conform to ColorSpec" names the bound; listing the declared implementations (`Symbol`, `NTuple{4,Float64}`, …) would name the fix, as the ordinary layer's messages do.
 
 ## Running
 

@@ -23,23 +23,15 @@ export lines, lines!, scatter, scatter!, barplot, barplot!, hist, hist!, vlines!
 
 # --- names, checked where they are given ------------------------------------------------------------
 
-_names(d) = join((":" * string(k) for k in sort!(collect(keys(d)))), ", ")
-function _named(c::Symbol)
-    haskey(PlotCore.NAMED, c) && return c
-    throw(ArgumentError("unknown colour :$c. The named colours are $(_names(PlotCore.NAMED)); a colour may also be an RGB or RGBA tuple, a vector of colours (one per point), or a value of a type conforming to ColorSpec"))
-end
-_color(c::Symbol) = _named(c)
+# a name becomes a `ColorName` or `MarkerName`, which checks it: an unknown name is refused where it is given
+_color(c::Symbol) = PlotCore.ColorName(c)
 _color(c::NTuple{4,<:Real}) = NTuple{4,Float64}(c)
 _color(c::NTuple{3,<:Real}) = (Float64(c[1]), Float64(c[2]), Float64(c[3]), 1.0)
-_color(c::AbstractVector{Symbol}) = Symbol[_named(s) for s in c]
+_color(c::AbstractVector{Symbol}) = PlotCore.ColorName[PlotCore.ColorName(s) for s in c]
 _color(c::AbstractVector{<:Tuple}) = NTuple{4,Float64}[_color(x) for x in c]
 _color(c) = c                                       # a user's type conforming to ColorSpec
-function _mark(m::Symbol)
-    haskey(PlotCore.MARKERS, m) && return m
-    throw(ArgumentError("unknown marker :$m. The markers are $(_names(PlotCore.MARKERS)), a vector of them (one per point), or a value of a type conforming to MarkerShape"))
-end
-_marker(m::Symbol) = _mark(m)
-_marker(m::AbstractVector{Symbol}) = Symbol[_mark(s) for s in m]
+_marker(m::Symbol) = PlotCore.MarkerName(m)
+_marker(m::AbstractVector{Symbol}) = PlotCore.MarkerName[PlotCore.MarkerName(s) for s in m]
 _marker(m) = m
 _step(s::Symbol) = s in (:pre, :post, :center) ? s :
     throw(ArgumentError("unknown step :$s. The steps are :pre, :post and :center"))
