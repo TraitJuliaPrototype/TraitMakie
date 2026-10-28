@@ -17,6 +17,9 @@ module MakieCompat
 using TraitWorld
 import TraitMakie
 const PC = TraitMakie.PlotCore
+# the old API's names are the umbrella's (TraitMakie.OldAPI); this package, a joint owner, gives them their
+# machinery (X3, slice 2)
+import TraitMakie.OldAPI: Plot, plot!, documented_attributes, conversion_trait, shared_attributes, lines!, lines
 export stairs, stairs!, Stairs, Point2, Point2f, Point2d
 
 # --- points (upstream: GeometryBasics' `Point2`) -----------------------------------------------------
@@ -55,13 +58,7 @@ struct Child
     attrs::Dict{Symbol, Any}        # attribute => `NodeRef` or value
 end
 
-"Upstream's `Plot{F, T}`: function type `F`, converted argument types `T`."
-mutable struct Plot{F, T}
-    converted::T
-    attributes::Dict{Symbol, Any}
-    graph::Dict{Symbol, Node}
-    children::Vector{Child}
-end
+# `Plot{F, T}` is the umbrella's (`TraitMakie.OldAPI.Plot`): its graph holds `Node`s, its children `Child`s
 "A node or an attribute of a plot, as `p.name` reads it inside a recipe."
 struct NodeRef
     plot::Any
@@ -83,6 +80,7 @@ function resolve(p::Plot, s::Symbol)
     haskey(attrs, s) && return attrs[s]
     n = get(getfield(p, :graph), s, nothing)
     n === nothing && throw(ArgumentError("$(typeof(p)) has no input or node :$s"))
+    n = n::Node
     vals = Any[resolve(p, i) for i in n.inputs]
     if !(n.valid && length(vals) == length(n.last) && all(((a, b),) -> a === b, zip(vals, n.last)))
         n.value = n.f(vals...)
@@ -98,14 +96,8 @@ resolve(x) = x
 Base.map!(f, p::Plot, inputs::Vector{Symbol}, output::Symbol) =
     (getfield(p, :graph)[output] = Node(f, inputs, Any[], nothing, false); p)
 
-"The recipe author's `plot!`, one method per recipe."
-function plot! end
-
 struct PointBased end
-conversion_trait(::Type) = nothing
-
-"The attribute defaults of a recipe, as name => value pairs (upstream: its documented attributes)."
-function documented_attributes end
+conversion_trait(::Type{<:Plot}) = nothing
 
 macro recipe(name, block)
     fname = Symbol(lowercase(String(name)))
@@ -134,8 +126,7 @@ macro recipe(name, block)
     end
 end
 
-# `lines`, a primitive: its attributes, as TraitMakie's own `lines!` takes them
-function lines end
+# `lines`, a primitive (the umbrella's function): its attributes, as TraitMakie's own `lines!` takes them
 const Lines{T} = Plot{typeof(lines), T}
 documented_attributes(::Type{<:Plot{typeof(lines)}}) = Pair{Symbol, Any}[:color => :blue, :linewidth => 1.5]
 
@@ -165,7 +156,7 @@ function _create!(fig, f, args...; kw...)
         haskey(attrs, k) || throw(ArgumentError("$(nameof(f)) has no attribute :$k"))
         attrs[k] = v
     end
-    p = Plot{typeof(f), typeof(converted)}(converted, attrs, Dict{Symbol, Node}(), Child[])
+    p = Plot{typeof(f), typeof(converted)}(converted, attrs, Dict{Symbol, Any}(), Any[])
     plot!(p)
     TraitMakie.plot!(fig, p)
     return p
@@ -176,6 +167,7 @@ end
 "The bridge: each child primitive given its inputs' current values."
 function refresh!(p::Plot)
     for c in getfield(p, :children)
+        c = c::Child
         c.prim.pos = Dynamic{PC.Positions}(resolve(c.pos))
         haskey(c.attrs, :color) && (c.prim.color = TraitMakie._color(resolve(c.attrs[:color])))
         haskey(c.attrs, :linewidth) && (c.prim.linewidth = Float64(resolve(c.attrs[:linewidth])))
@@ -186,7 +178,7 @@ function _limits(p::Plot)
     refresh!(p)
     xmin, xmax, ymin, ymax = Inf, -Inf, Inf, -Inf
     for c in getfield(p, :children)
-        a, b, cc, d = PC.datalimits(c.prim)
+        a, b, cc, d = PC.datalimits((c::Child).prim)
         xmin = min(xmin, a); xmax = max(xmax, b); ymin = min(ymin, cc); ymax = max(ymax, d)
     end
     return (xmin, xmax, ymin, ymax)
@@ -194,7 +186,7 @@ end
 function _draw!(p::Plot, c::PC.Canvas, t::PC.Transform2D)
     refresh!(p)
     for ch in getfield(p, :children)
-        PC.draw!(ch.prim, c, t)
+        PC.draw!((ch::Child).prim, c, t)
     end
     return nothing
 end

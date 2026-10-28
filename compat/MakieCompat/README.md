@@ -9,7 +9,9 @@ What the layer provides, plain code that uses the trait world (`src/MakieCompat.
 - the hand-over: `Plot{F, T}` implements TraitMakie's `Plot` trait as a family, so an axis keeps old plots beside the core's;
 - a precompile workload, as an old recipe package would have one.
 
-Not yet (slice 2): the umbrella owning `Plot{F, T}` with this layer as joint owner; PlainPlots with the same layer, the control; the conversion cascade beyond `PointBased`; `Attributes` and `Observable` as user types; other recipes.
+The old API's names and types are the umbrella's (`TraitMakie.OldAPI`: `Plot{F, T}`, `plot!`, `documented_attributes`, `conversion_trait`, `shared_attributes`, `lines!`, `lines`); TraitMakie declares this layer a joint owner (`@joint_owners MakieCompat`), so its methods on them are owned (slice 2, E-222). The control, the same layer over PlainPlots, is `../../baselines/MakieCompatPlain/`.
+
+Not yet: the conversion cascade beyond `PointBased`; `Attributes` and `Observable` as user types; other recipes.
 
 ## How to run
 
@@ -29,3 +31,14 @@ julia-1.13 a4e9ad5da9, TraitWorld 03654b6; fresh processes, 2 runs each. Current
 | after a late `using DataFrames`: next PNG | 6.5–6.6 ms, nothing recompiled | 6.8–7.0 ms, nothing recompiled | 6.8–6.9 ms, nothing recompiled |
 
 The PNGs equal TraitMakie's own `stairs` for `:pre`, `:post` and `:center`, after `step` and `color` change on the plot, and after a recolour through the core.
+
+### Slice 2 (2026-10-28): the control
+
+TraitWorld 38a3abf; fresh processes, 2 runs each (`experiments/x3/costs.jl`).
+
+| | load | first PNG | next PNG after a late `using DataFrames` |
+|---|---|---|---|
+| TraitMakie's own `stairs` | 0.31 s | 22 ms | 6.5 ms, nothing recompiled |
+| upstream's `stairs.jl` here | 0.31–0.32 s | 67–80 ms | 6.9–7.2 ms, nothing recompiled |
+| PlainPlots' own `stairs` | 0.13 s | 22 ms | 125 ms, 17 CodeInstances |
+| upstream's `stairs.jl` over PlainPlots (MakieCompatPlain) | 0.13 s | 62–64 ms | 164–166 ms, 25 CodeInstances |

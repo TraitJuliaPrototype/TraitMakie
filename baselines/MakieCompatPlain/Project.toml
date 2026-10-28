@@ -1,0 +1,10 @@
+name = "MakieCompatPlain"
+uuid = "7398d868-23f1-42af-9c26-aa876e7af6ae"
+version = "0.0.1"
+
+[deps]
+PlainPlots = "7e055042-c00a-4782-9863-d6a582dceb57"
+PrecompileTools = "aea7be01-6a6a-4083-8856-8a6e6704d82a"
+
+[sources]
+PlainPlots = {path = "../PlainPlots"}

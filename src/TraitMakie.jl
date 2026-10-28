@@ -13,6 +13,9 @@ Cairo directly (wrapping by facts).
 """
 module TraitMakie
 using TraitWorld
+# the old recipe API's machinery lives in MakieCompat, which defines methods on the names below (X3, slice 2;
+# the lean-core memo §1.2): the umbrella that owns the names declares it a joint owner (traits §10.1)
+@joint_owners MakieCompat
 
 include("PlotCore.jl")
 using .PlotCore
@@ -187,6 +190,34 @@ TraitWorld.@workload begin
     lh[] = [0.0, 3.0]
     save(path, lf)
     rm(path; force = true)
+end
+
+
+"""
+    TraitMakie.OldAPI
+
+The old Makie recipe API's names and types, owned by the umbrella (the lean-core memo §1.2): `Plot{F, T}`,
+the empty generic functions an old recipe extends or calls. Their machinery is MakieCompat's, a joint owner.
+"""
+module OldAPI
+"Upstream's `Plot{F, T}`: the plotting function's type `F`, the converted arguments' types `T`."
+mutable struct Plot{F, T}
+    converted::T
+    attributes::Dict{Symbol, Any}
+    graph::Dict{Symbol, Any}
+    children::Vector{Any}
+end
+"The recipe author's `plot!`, one method per recipe."
+function plot! end
+"A recipe's attribute defaults, as name => value pairs."
+function documented_attributes end
+"A recipe's conversion trait (`PointBased()` for `stairs`)."
+function conversion_trait end
+"A recipe's attributes that another plot type also has."
+function shared_attributes end
+"A line child of an old-style plot."
+function lines! end
+function lines end
 end
 
 end
