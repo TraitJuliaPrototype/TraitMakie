@@ -1,0 +1,31 @@
+# MakieCompat
+
+The old Makie recipe API above TraitMakie's trait core: X3's first slice ([the plan](../../../writeup/plans/2026-10-28-x3-waist-slice1.md), E-219). Upstream's `src/basic_recipes/stairs.jl` from Makie 0.24.16 is in `src/upstream/stairs.jl`, byte for byte, and is included into the module.
+
+What the layer provides, plain code that uses the trait world (`src/MakieCompat.jl`):
+- `Plot{F, T}`, `@recipe`, `documented_attributes`, `conversion_trait`, `PointBased`, `plot!`, `Point2`;
+- a compute graph with ComputePipeline's author API (`map!(f, p, inputs, output)`, nodes read as `p.name`), recomputed when an input changed;
+- `lines!(p, attrs, node)` in an old `plot!`: a core `PlotCore.Lines` child, fed the node's value at each use;
+- the hand-over: `Plot{F, T}` implements TraitMakie's `Plot` trait as a family, so an axis keeps old plots beside the core's;
+- a precompile workload, as an old recipe package would have one.
+
+Not yet (slice 2): the umbrella owning `Plot{F, T}` with this layer as joint owner; PlainPlots with the same layer, the control; the conversion cascade beyond `PointBased`; `Attributes` and `Observable` as user types; other recipes.
+
+## How to run
+
+```
+julia --project=experiments/x3/env experiments/x3/check.jl <out dir>        # correctness: PNGs against TraitMakie's own stairs
+julia --project=experiments/x3/env experiments/x3/costs.jl <core|old> <out dir>   # load, first PNG, after a late DataFrames load
+```
+
+## Results (2026-10-28)
+
+julia-1.13 a4e9ad5da9, TraitWorld 03654b6; fresh processes, 2 runs each. Current numbers: [the evidence](../../../writeup/design/evidence.md) §3.
+
+| | TraitMakie's `stairs` | upstream's `stairs.jl` here | with the workload |
+|---|---|---|---|
+| `using` | 0.31 s | 0.31–0.33 s | 0.31–0.32 s |
+| first PNG | 42–43 ms | 749–750 ms | 66 ms |
+| after a late `using DataFrames`: next PNG | 6.5–6.6 ms, nothing recompiled | 6.8–7.0 ms, nothing recompiled | 6.8–6.9 ms, nothing recompiled |
+
+The PNGs equal TraitMakie's own `stairs` for `:pre`, `:post` and `:center`, after `step` and `color` change on the plot, and after a recolour through the core.
