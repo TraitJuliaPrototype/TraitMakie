@@ -95,7 +95,7 @@ mutable struct Child
     pos::Any                        # a `NodeRef` or a value
     faces::Any                      # a mesh's `NodeRef` or vector of faces; `nothing` for lines
     attrs::Dict{Symbol, Any}        # attribute => `NodeRef` or value
-    prims::Vector{Any}              # core primitives
+    prims::Vector{Dynamic{PC.Plot}} # core primitives, of any kind
 end
 
 # `Plot{F, T}` is the umbrella's (`TraitMakie.OldAPI.Plot`): its graph holds `Node`s, its children `Child`s
@@ -197,7 +197,7 @@ shared_attributes(p::Plot, ::Type{<:Plot{F}}) where {F} =
 "A line child of an old-style plot: core `Lines`, fed at each use; keywords as attributes (`linewidth = p.strokewidth`)."
 function lines!(p::Plot, attrs::Dict{Symbol, Any}, pos; kw...)
     a = merge(attrs, Dict{Symbol, Any}(kw))
-    c = Child(:lines, pos, nothing, a, Any[])
+    c = Child(:lines, pos, nothing, a, Dynamic{PC.Plot}[])
     push!(getfield(p, :children), c)
     return c
 end
@@ -207,7 +207,7 @@ documented_attributes(::Type{<:Plot{typeof(mesh)}}) = Pair{Symbol, Any}[:color =
 "A mesh child: its vertices and triangle faces, drawn as one core `Poly` per triangle."
 function mesh!(p::Plot, attrs::Dict{Symbol, Any}, coords, faces; kw...)
     a = merge(attrs, Dict{Symbol, Any}(kw))
-    c = Child(:mesh, coords, faces, a, Any[])
+    c = Child(:mesh, coords, faces, a, Dynamic{PC.Plot}[])
     push!(getfield(p, :children), c)
     return c
 end
@@ -260,14 +260,14 @@ function refresh!(p::Plot)
         if c.kind === :lines
             lw = Float64(_attr(c, :linewidth, 1.5))
             for run in _runs(resolve(c.pos))
-                push!(c.prims, PC.Lines(Dynamic{PC.Positions}(run), col, lw))
+                push!(c.prims, Dynamic{PC.Plot}(PC.Lines(Dynamic{PC.Positions}(run), col, lw)))
             end
         else
             vs = resolve(c.pos)
             for f in resolve(c.faces)
                 tri = Point2d[Point2d(vs[i][1], vs[i][2]) for i in (f.a, f.b, f.c)]
                 any(isnan, tri) && continue
-                push!(c.prims, PC.Poly(Dynamic{PC.Positions}(tri), col))
+                push!(c.prims, Dynamic{PC.Plot}(PC.Poly(Dynamic{PC.Positions}(tri), col)))
             end
         end
     end
@@ -277,7 +277,7 @@ function _limits(p::Plot)
     refresh!(p)
     xmin, xmax, ymin, ymax = Inf, -Inf, Inf, -Inf
     for c in getfield(p, :children), q in (c::Child).prims
-        a, b, cc, d = PC.datalimits(q)::NTuple{4,Float64}
+        a, b, cc, d = PC.datalimits(q)
         xmin = min(xmin, a); xmax = max(xmax, b); ymin = min(ymin, cc); ymax = max(ymax, d)
     end
     return (xmin, xmax, ymin, ymax)

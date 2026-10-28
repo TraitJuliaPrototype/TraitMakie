@@ -202,7 +202,7 @@ end
 
 # the loops over data: bounded functions; the plots hold their data as `Dynamic` fields, so the plots'
 # implementations pass them with `compiled_for`, and each loop runs compiled for the data's key
-function limits(pos::Positions)
+function limits(pos::Positions)::NTuple{4,Float64}
     n = npoints(pos)
     xmin, xmax, ymin, ymax = Inf, -Inf, Inf, -Inf
     for i in 1:n
@@ -211,7 +211,7 @@ function limits(pos::Positions)
     end
     return (xmin, xmax, ymin, ymax)
 end
-function pixels(pos::Positions, t::Transform2D)
+function pixels(pos::Positions, t::Transform2D)::Tuple{Vector{Float64},Vector{Float64}}
     n = npoints(pos)
     xs = Vector{Float64}(undef, n)
     ys = Vector{Float64}(undef, n)
@@ -221,7 +221,7 @@ function pixels(pos::Positions, t::Transform2D)
     end
     return xs, ys
 end
-colors(c::ColorSpec, n::Int) = NTuple{4,Float64}[rgba(c, i) for i in 1:n]
+colors(c::ColorSpec, n::Int)::Vector{NTuple{4,Float64}} = NTuple{4,Float64}[rgba(c, i) for i in 1:n]
 
 # --- primitives ---------------------------------------------------------------------------------
 
@@ -265,7 +265,7 @@ mutable struct Labels
 end
 
 "Markers of shape `m`, radius `r` pixels, at the pixel points."
-function drawmarkers(m::MarkerShape, c::Canvas, xs::Vector{Float64}, ys::Vector{Float64}, cols::Vector{NTuple{4,Float64}}, r::Float64)
+function drawmarkers(m::MarkerShape, c::Canvas, xs::Vector{Float64}, ys::Vector{Float64}, cols::Vector{NTuple{4,Float64}}, r::Float64)::Nothing
     ctx = c.ctx
     for i in eachindex(xs)
         o = outline(m, i)
@@ -281,11 +281,11 @@ function drawmarkers(m::MarkerShape, c::Canvas, xs::Vector{Float64}, ys::Vector{
     end
     return nothing
 end
-function barlimits(pos::Positions, w::Float64)
+function barlimits(pos::Positions, w::Float64)::NTuple{4,Float64}
     xmin, xmax, ymin, ymax = limits(pos)
     return (xmin - w / 2, xmax + w / 2, min(ymin, 0.0), max(ymax, 0.0))
 end
-function drawbars(pos::Positions, c::Canvas, t::Transform2D, col::ColorSpec, w::Float64)
+function drawbars(pos::Positions, c::Canvas, t::Transform2D, col::ColorSpec, w::Float64)::Nothing
     for i in 1:npoints(pos)
         x, y = pointx(pos, i), pointy(pos, i)
         x0, x1 = px(t, x - w / 2), px(t, x + w / 2)
@@ -294,49 +294,49 @@ function drawbars(pos::Positions, c::Canvas, t::Transform2D, col::ColorSpec, w::
     end
     return nothing
 end
-function vlimits(pos::Positions)
+function vlimits(pos::Positions)::NTuple{4,Float64}
     xmin, xmax, _, _ = limits(pos)
     return (xmin, xmax, Inf, -Inf)                  # no extent in y
 end
-function drawvlines(pos::Positions, c::Canvas, t::Transform2D, col::ColorSpec, lw::Float64)
+function drawvlines(pos::Positions, c::Canvas, t::Transform2D, col::ColorSpec, lw::Float64)::Nothing
     for i in 1:npoints(pos)
         x = px(t, pointx(pos, i))
         polyline!(c, [x, x], [t.top, t.bottom], rgba(col, i), lw)
     end
     return nothing
 end
-function drawlabels(pos::Positions, c::Canvas, t::Transform2D, texts::Vector{String}, col::ColorSpec, size::Float64, align::Symbol)
+function drawlabels(pos::Positions, c::Canvas, t::Transform2D, texts::Vector{String}, col::ColorSpec, size::Float64, align::Symbol)::Nothing
     for i in 1:min(npoints(pos), length(texts))
         text!(c, px(t, pointx(pos, i)), py(t, pointy(pos, i)), texts[i], size, align, rgba(col, i))
     end
     return nothing
 end
 
-# opening a dynamic value at a bound selects the worker by dispatch: the result is asserted here
-datalimits(p::Lines) = limits(compiled_for(p.pos))::NTuple{4,Float64}
-datalimits(p::Scatter) = limits(compiled_for(p.pos))::NTuple{4,Float64}
-datalimits(p::Bars) = barlimits(compiled_for(p.pos), p.width)::NTuple{4,Float64}
-datalimits(p::VLines) = vlimits(compiled_for(p.pos))::NTuple{4,Float64}
-datalimits(p::Poly) = limits(compiled_for(p.pos))::NTuple{4,Float64}
-datalimits(p::Labels) = limits(compiled_for(p.pos))::NTuple{4,Float64}
+# opening a dynamic value at a bound selects the worker by dispatch; the kernels declare their results
+datalimits(p::Lines) = limits(compiled_for(p.pos))
+datalimits(p::Scatter) = limits(compiled_for(p.pos))
+datalimits(p::Bars) = barlimits(compiled_for(p.pos), p.width)
+datalimits(p::VLines) = vlimits(compiled_for(p.pos))
+datalimits(p::Poly) = limits(compiled_for(p.pos))
+datalimits(p::Labels) = limits(compiled_for(p.pos))
 function draw!(p::Lines, c::Canvas, t::Transform2D)
-    xs, ys = pixels(compiled_for(p.pos), t)::Tuple{Vector{Float64},Vector{Float64}}
+    xs, ys = pixels(compiled_for(p.pos), t)
     polyline!(c, xs, ys, rgba(p.color, 1), p.linewidth)
     return nothing
 end
 function draw!(p::Scatter, c::Canvas, t::Transform2D)
-    xs, ys = pixels(compiled_for(p.pos), t)::Tuple{Vector{Float64},Vector{Float64}}
-    drawmarkers(compiled_for(p.marker), c, xs, ys, colors(compiled_for(p.color), length(xs))::Vector{NTuple{4,Float64}}, p.markersize / 2)::Nothing
+    xs, ys = pixels(compiled_for(p.pos), t)
+    drawmarkers(compiled_for(p.marker), c, xs, ys, colors(compiled_for(p.color), length(xs)), p.markersize / 2)
     return nothing
 end
-draw!(p::Bars, c::Canvas, t::Transform2D) = drawbars(compiled_for(p.pos), c, t, compiled_for(p.color), p.width)::Nothing
-draw!(p::VLines, c::Canvas, t::Transform2D) = drawvlines(compiled_for(p.pos), c, t, compiled_for(p.color), p.linewidth)::Nothing
+draw!(p::Bars, c::Canvas, t::Transform2D) = drawbars(compiled_for(p.pos), c, t, compiled_for(p.color), p.width)
+draw!(p::VLines, c::Canvas, t::Transform2D) = drawvlines(compiled_for(p.pos), c, t, compiled_for(p.color), p.linewidth)
 function draw!(p::Poly, c::Canvas, t::Transform2D)
-    xs, ys = pixels(compiled_for(p.pos), t)::Tuple{Vector{Float64},Vector{Float64}}
+    xs, ys = pixels(compiled_for(p.pos), t)
     polygon!(c, xs, ys, rgba(p.color, 1))
     return nothing
 end
-draw!(p::Labels, c::Canvas, t::Transform2D) = drawlabels(compiled_for(p.pos), c, t, p.texts, compiled_for(p.color), p.fontsize, p.align)::Nothing
+draw!(p::Labels, c::Canvas, t::Transform2D) = drawlabels(compiled_for(p.pos), c, t, p.texts, compiled_for(p.color), p.fontsize, p.align)
 setcolor!(p::Lines, c::Kept{ColorSpec}) = (p.color = c; nothing)
 setcolor!(p::Scatter, c::Kept{ColorSpec}) = (p.color = c; nothing)
 setcolor!(p::Bars, c::Kept{ColorSpec}) = (p.color = c; nothing)
@@ -378,7 +378,7 @@ mutable struct Band
 end
 
 "The step points of `pos` (Makie's `stairs`), as an n × 2 matrix."
-function steppoints(pos::Positions, step::Symbol)
+function steppoints(pos::Positions, step::Symbol)::Matrix{Float64}
     n = npoints(pos)
     n == 0 && return Matrix{Float64}(undef, 0, 2)
     m = step === :center ? 2n : 2n - 1
@@ -402,7 +402,7 @@ function steppoints(pos::Positions, step::Symbol)
     return out
 end
 "Bin centres and counts of a sample (an n × 2 matrix), and the bins' width."
-function binned(s::Sample, bins::Int)
+function binned(s::Sample, bins::Int)::Tuple{Matrix{Float64},Float64}
     n = nvalues(s)
     n == 0 && return Matrix{Float64}(undef, 0, 2), 1.0
     lo, hi = Inf, -Inf
@@ -422,7 +422,7 @@ function binned(s::Sample, bins::Int)
     return out, w
 end
 "The band's outline: the lower curve, then the upper curve backwards."
-function bandoutline(lo::Positions, up::Positions)
+function bandoutline(lo::Positions, up::Positions)::Matrix{Float64}
     n, m = npoints(lo), npoints(up)
     out = Matrix{Float64}(undef, n + m, 2)
     for i in 1:n
@@ -437,14 +437,14 @@ end
 function refresh!(s::Stairs)
     s.step in (:pre, :post, :center) || throw(ArgumentError("stairs: step is :pre, :post or :center, not :$(s.step)"))
     l = s.line
-    l.pos = Dynamic{Positions}(steppoints(compiled_for(s.pos), s.step)::Matrix{Float64})
+    l.pos = Dynamic{Positions}(steppoints(compiled_for(s.pos), s.step))
     l.color = s.color
     l.linewidth = s.linewidth
     return l
 end
 function refresh!(h::Hist)
     h.bins >= 1 || throw(ArgumentError("hist: bins must be at least 1, not $(h.bins)"))
-    pts, w = binned(compiled_for(h.values), h.bins)::Tuple{Matrix{Float64},Float64}
+    pts, w = binned(compiled_for(h.values), h.bins)
     b = h.bars
     b.pos = Dynamic{Positions}(pts)
     b.width = w
@@ -453,7 +453,7 @@ function refresh!(h::Hist)
 end
 function refresh!(b::Band)
     p = b.poly
-    p.pos = Dynamic{Positions}(bandoutline(compiled_for(b.lower), compiled_for(b.upper))::Matrix{Float64})
+    p.pos = Dynamic{Positions}(bandoutline(compiled_for(b.lower), compiled_for(b.upper)))
     p.color = b.color
     return p
 end
