@@ -114,4 +114,4 @@ Found while building step 2; TraitMakie works around each without touching the m
 
 - Tests: `julia --project=. -e 'using Pkg; Pkg.test()'`. `TRAITMAKIE_UPDATE_REFERENCES=1` rewrites `test/references/`.
 - The REPL session: `scripts/session.sh`.
-- On the shared machine: one Julia job at a time, niced, under the shared lock; `JULIA_TW_VIEWCACHE=0`.
+- On the shared machine: one Julia job at a time, niced, under the shared lock.
