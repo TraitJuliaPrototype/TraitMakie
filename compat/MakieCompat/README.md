@@ -1,6 +1,6 @@
 # MakieCompat
 
-The old Makie recipe API above TraitMakie's trait core: X3's first slice ([the plan](../../../writeup/plans/2026-10-28-x3-waist-slice1.md), E-219). Upstream's `src/basic_recipes/stairs.jl` from Makie 0.24.16 is in `src/upstream/stairs.jl`, byte for byte, and is included into the module.
+The old Makie recipe API above TraitMakie's trait core: X3's slices 1–3 ([the plan](../../../writeup/plans/2026-10-28-x3-waist-slice1.md), E-219). Upstream's `src/basic_recipes/stairs.jl` and `band.jl` from Makie 0.24.16 are in `src/upstream/`, byte for byte, and are included into the module.
 
 What the layer provides, plain code that uses the trait world (`src/MakieCompat.jl`):
 - `Plot{F, T}`, `@recipe`, `documented_attributes`, `conversion_trait`, `PointBased`, `plot!`, `Point2`;
@@ -11,7 +11,9 @@ What the layer provides, plain code that uses the trait world (`src/MakieCompat.
 
 The old API's names and types are the umbrella's (`TraitMakie.OldAPI`: `Plot{F, T}`, `plot!`, `documented_attributes`, `conversion_trait`, `shared_attributes`, `lines!`, `lines`); TraitMakie declares this layer a joint owner (`@joint_owners MakieCompat`), so its methods on them are owned (slice 2, E-222). The control, the same layer over PlainPlots, is `../../baselines/MakieCompatPlain/`.
 
-Not yet: the conversion cascade beyond `PointBased`; `Attributes` and `Observable` as user types; other recipes.
+`band.jl` (slice 3, E-223) brought the conversion cascade (a recipe's own `convert_arguments` before its conversion trait), named arguments, `@inherit` from a theme, a mesh leaf (triangles drawn as core polygons) and keyword attributes on leaves. Its pixels equal TraitMakie's own band's.
+
+Not yet: `Attributes` and `Observable` as user types; the conversion cascade's other cases; other recipes.
 
 ## How to run
 

@@ -1,8 +1,8 @@
 """
     MakieCompat
 
-The old Makie recipe API above TraitMakie's trait core (the lean-core memo §1.2; X3, slice 1, E-219):
-upstream's `stairs.jl` (Makie 0.24.16) is included unchanged. Plain code that uses the trait world.
+The old Makie recipe API above TraitMakie's trait core (the lean-core memo §1.2; X3, E-219, E-222, E-223):
+upstream's `stairs.jl` and `band.jl` (Makie 0.24.16) are included unchanged. Plain code that uses the trait world.
 
 - `Plot{F, T}`, upstream's plot type: the plotting function's type and the converted arguments' types,
   with attributes, a compute graph (ComputePipeline's author API: `map!`, nodes read as `p.name`) and
@@ -19,8 +19,11 @@ import TraitMakie
 const PC = TraitMakie.PlotCore
 # the old API's names are the umbrella's (TraitMakie.OldAPI); this package, a joint owner, gives them their
 # machinery (X3, slice 2)
-import TraitMakie.OldAPI: Plot, plot!, documented_attributes, conversion_trait, shared_attributes, lines!, lines
-export stairs, stairs!, Stairs, Point2, Point2f, Point2d
+import TraitMakie.OldAPI: Plot, plot!, documented_attributes, conversion_trait, shared_attributes, lines!, lines,
+                          convert_arguments, mesh!, mesh
+export stairs, stairs!, Stairs, band, band!, Band, Point2, Point2f, Point2d
+"`band.jl` extends `Makie.plot!`: the old API's module, here this one."
+const Makie = @__MODULE__
 
 # --- points (upstream: GeometryBasics' `Point2`) -----------------------------------------------------
 
@@ -31,8 +34,40 @@ struct Point2{T <: Real} <: AbstractVector{T}
 end
 Base.size(::Point2) = (2,)
 Base.getindex(p::Point2, i::Int) = i == 1 ? p.x : i == 2 ? p.y : throw(BoundsError(p, i))
+Point2{T}(v::Real) where {T} = Point2{T}(v, v)
+Point2(v::Real) = Point2(v, v)
+Base.isnan(p::Point2) = isnan(p.x) || isnan(p.y)
+Base.reverse(p::Point2) = Point2(p.y, p.x)
 const Point2f = Point2{Float32}
 const Point2d = Point2{Float64}
+"GeometryBasics' `Point3`, as far as `band.jl` names it."
+struct Point3{T <: Real} <: AbstractVector{T}
+    x::T
+    y::T
+    z::T
+end
+Base.size(::Point3) = (3,)
+Base.getindex(p::Point3, i::Int) = (p.x, p.y, p.z)[i]
+Point3(v::Real) = Point3(v, v, v)
+"GeometryBasics' triangle face, by the indices of its vertices."
+struct GLTriangleFace
+    a::Int
+    b::Int
+    c::Int
+end
+"IntervalSets' interval, as far as `band.jl` reads it."
+struct Interval{T}
+    left::T
+    right::T
+end
+leftendpoint(i::Interval) = i.left
+rightendpoint(i::Interval) = i.right
+"The float type of the arguments' elements."
+float_type(xs...) = float(promote_type(map(eltype, xs)...))
+"A colour as given (TraitMakie translates it where a primitive takes it)."
+to_color(c) = c
+"Makie's shading switch; a 2D canvas has none."
+const NoShading = :none
 
 # a vector of points is data the core's plots read (the layer owns `Point2`)
 @implement PC.Positions V where {V <: AbstractVector{<:Point2}} begin
@@ -51,11 +86,16 @@ mutable struct Node
     value::Any
     valid::Bool
 end
-"An old-style child: a core primitive and where its inputs come from."
-struct Child
-    prim::PC.Lines
+"""
+An old-style child: its kind (`:lines`, `:mesh`), where its inputs come from, and the core primitives made from
+their current values at each use (a line split at `NaN`s; a mesh as one polygon per triangle).
+"""
+mutable struct Child
+    kind::Symbol
     pos::Any                        # a `NodeRef` or a value
+    faces::Any                      # a mesh's `NodeRef` or vector of faces; `nothing` for lines
     attrs::Dict{Symbol, Any}        # attribute => `NodeRef` or value
+    prims::Vector{Any}              # core primitives
 end
 
 # `Plot{F, T}` is the umbrella's (`TraitMakie.OldAPI.Plot`): its graph holds `Node`s, its children `Child`s
@@ -72,10 +112,14 @@ function Base.setproperty!(p::Plot, s::Symbol, v)
     getfield(p, :attributes)[s] = v
 end
 
+"A recipe's argument names (`@recipe Band (lowerpoints, upperpoints)`): the converted arguments' other names."
+argnames(::Type{<:Plot}) = ()
 "The current value of input or node `s` of plot `p`."
 function resolve(p::Plot, s::Symbol)
     m = match(r"^converted_(\d+)$", String(s))
     m === nothing || return getfield(p, :converted)[parse(Int, m[1])]
+    k = findfirst(==(s), argnames(typeof(p)))
+    k === nothing || return getfield(p, :converted)[k]
     attrs = getfield(p, :attributes)
     haskey(attrs, s) && return attrs[s]
     n = get(getfield(p, :graph), s, nothing)
@@ -95,11 +139,26 @@ resolve(x) = x
 "ComputePipeline's `map!`: node `output` of plot `p` is `f` of the inputs' values."
 Base.map!(f, p::Plot, inputs::Vector{Symbol}, output::Symbol) =
     (getfield(p, :graph)[output] = Node(f, inputs, Any[], nothing, false); p)
+Base.map!(f, p::Plot, input::Symbol, output::Symbol) = map!(f, p, [input], output)
 
 struct PointBased end
 conversion_trait(::Type{<:Plot}) = nothing
 
+"Makie's theme, as far as the recipes here inherit from it (`@inherit name`)."
+const THEME = Dict{Symbol, Any}(:patchstrokecolor => :black, :patchstrokewidth => 0.0, :colormap => :viridis,
+                                :patchcolor => (0.0, 0.0, 0.0, 0.6))
+macro inherit(name)
+    return :(THEME[$(QuoteNode(name))])
+end
+
 macro recipe(name, block)
+    return _recipe(name, (), block)
+end
+macro recipe(name, args, block)
+    names = args isa Symbol ? (args,) : Tuple(args.args)
+    return _recipe(name, names, block)
+end
+function _recipe(name, names, block)
     fname = Symbol(lowercase(String(name)))
     fname! = Symbol(fname, "!")
     items = Any[]
@@ -121,6 +180,7 @@ macro recipe(name, block)
         Base.@__doc__ function $(esc(fname)) end          # a docstring on `@recipe` documents the plotting function
         const $(esc(name)){T} = Plot{typeof($(esc(fname))), T}
         $(esc(:documented_attributes))(::Type{<:Plot{typeof($(esc(fname)))}}) = Pair{Symbol, Any}[$(items...)]
+        $(esc(:argnames))(::Type{<:Plot{typeof($(esc(fname)))}}) = $(QuoteNode(names))
         $(esc(fname!))(fig, args...; kw...) = _create!(fig, $(esc(fname)), args...; kw...)
         $(esc(fname))(args...; kw...) = (fig = TraitMakie.figure(); $(esc(fname!))(fig, args...; kw...); fig)
     end
@@ -134,11 +194,22 @@ documented_attributes(::Type{<:Plot{typeof(lines)}}) = Pair{Symbol, Any}[:color 
 shared_attributes(p::Plot, ::Type{<:Plot{F}}) where {F} =
     Dict{Symbol, Any}(k => NodeRef(p, k) for (k, _) in documented_attributes(Plot{F}) if haskey(getfield(p, :attributes), k))
 
-"A line child of an old-style plot: a core `Lines`, fed at each use."
-function lines!(p::Plot, attrs::Dict{Symbol, Any}, pos)
-    prim = PC.Lines(Dynamic{PC.Positions}(Point2d[]), TraitMakie._color(:blue), 1.5)
-    push!(getfield(p, :children), Child(prim, pos, attrs))
-    return prim
+"A line child of an old-style plot: core `Lines`, fed at each use; keywords as attributes (`linewidth = p.strokewidth`)."
+function lines!(p::Plot, attrs::Dict{Symbol, Any}, pos; kw...)
+    a = merge(attrs, Dict{Symbol, Any}(kw))
+    c = Child(:lines, pos, nothing, a, Any[])
+    push!(getfield(p, :children), c)
+    return c
+end
+# `mesh`, a primitive (the umbrella's function), as far as `band.jl` uses it
+const Mesh{T} = Plot{typeof(mesh), T}
+documented_attributes(::Type{<:Plot{typeof(mesh)}}) = Pair{Symbol, Any}[:color => :black, :alpha => 1.0]
+"A mesh child: its vertices and triangle faces, drawn as one core `Poly` per triangle."
+function mesh!(p::Plot, attrs::Dict{Symbol, Any}, coords, faces; kw...)
+    a = merge(attrs, Dict{Symbol, Any}(kw))
+    c = Child(:mesh, coords, faces, a, Any[])
+    push!(getfield(p, :children), c)
+    return c
 end
 
 # the conversion of `PointBased` arguments (upstream's `convert_arguments` for `PointBased`, the cases used)
@@ -147,10 +218,12 @@ _pointbased(ps::AbstractVector{<:Point2}) = (Point2d[Point2d(p[1], p[2]) for p i
 _pointbased(ps::AbstractVector{<:Tuple{Real, Real}}) = (Point2d[Point2d(p[1], p[2]) for p in ps],)
 _convert(::PointBased, args...) = _pointbased(args...)
 
-"Make an old-style plot of `f` and add it to the figure (the creation pipeline, the cases used)."
+"Make an old-style plot of `f` and add it to the figure (the creation pipeline, the cases used): the recipe's own
+`convert_arguments` where it has one for the arguments, else its conversion trait's."
 function _create!(fig, f, args...; kw...)
     P0 = Plot{typeof(f)}
-    converted = _convert(conversion_trait(P0), args...)
+    converted = hasmethod(convert_arguments, Tuple{Type{P0}, map(typeof, args)...}) ? convert_arguments(P0, args...) :
+                _convert(conversion_trait(P0), args...)
     attrs = Dict{Symbol, Any}(documented_attributes(P0))
     for (k, v) in kw
         haskey(attrs, k) || throw(ArgumentError("$(nameof(f)) has no attribute :$k"))
@@ -164,29 +237,55 @@ end
 
 # --- the hand-over: an old-style plot is a core `Plot` ----------------------------------------------
 
-"The bridge: each child primitive given its inputs' current values."
+_attr(c::Child, k::Symbol, default) = haskey(c.attrs, k) ? resolve(c.attrs[k]) : default
+"A line's points split at `NaN`s: the core draws each run as one `Lines`."
+function _runs(ps)
+    out = Vector{Point2d}[]; cur = Point2d[]
+    for q in ps
+        if isnan(q)
+            isempty(cur) || push!(out, cur); cur = Point2d[]
+        else
+            push!(cur, Point2d(q[1], q[2]))
+        end
+    end
+    isempty(cur) || push!(out, cur)
+    return out
+end
+"The bridge: each child's core primitives made from its inputs' current values."
 function refresh!(p::Plot)
     for c in getfield(p, :children)
         c = c::Child
-        c.prim.pos = Dynamic{PC.Positions}(resolve(c.pos))
-        haskey(c.attrs, :color) && (c.prim.color = TraitMakie._color(resolve(c.attrs[:color])))
-        haskey(c.attrs, :linewidth) && (c.prim.linewidth = Float64(resolve(c.attrs[:linewidth])))
+        empty!(c.prims)
+        col = TraitMakie._color(_attr(c, :color, :black))
+        if c.kind === :lines
+            lw = Float64(_attr(c, :linewidth, 1.5))
+            for run in _runs(resolve(c.pos))
+                push!(c.prims, PC.Lines(Dynamic{PC.Positions}(run), col, lw))
+            end
+        else
+            vs = resolve(c.pos)
+            for f in resolve(c.faces)
+                tri = Point2d[Point2d(vs[i][1], vs[i][2]) for i in (f.a, f.b, f.c)]
+                any(isnan, tri) && continue
+                push!(c.prims, PC.Poly(Dynamic{PC.Positions}(tri), col))
+            end
+        end
     end
     return p
 end
 function _limits(p::Plot)
     refresh!(p)
     xmin, xmax, ymin, ymax = Inf, -Inf, Inf, -Inf
-    for c in getfield(p, :children)
-        a, b, cc, d = PC.datalimits((c::Child).prim)
+    for c in getfield(p, :children), q in (c::Child).prims
+        a, b, cc, d = PC.datalimits(q)::NTuple{4,Float64}
         xmin = min(xmin, a); xmax = max(xmax, b); ymin = min(ymin, cc); ymax = max(ymax, d)
     end
     return (xmin, xmax, ymin, ymax)
 end
 function _draw!(p::Plot, c::PC.Canvas, t::PC.Transform2D)
     refresh!(p)
-    for ch in getfield(p, :children)
-        PC.draw!((ch::Child).prim, c, t)
+    for ch in getfield(p, :children), q in (ch::Child).prims
+        PC.draw!(q, c, t)
     end
     return nothing
 end
@@ -196,7 +295,11 @@ end
     setcolor!(p, c) = (getfield(p, :attributes)[:color] = c; nothing)
 end
 
+"Makie's examples of a recipe's attributes (`band.jl` defines one); not used here."
+function attribute_examples end
+
 include("upstream/stairs.jl")
+include("upstream/band.jl")
 
 # a precompile workload, as an old recipe package would have one: the old-style path into the package image
 TraitWorld.@workload begin

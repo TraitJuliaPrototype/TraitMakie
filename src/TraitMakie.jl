@@ -218,6 +218,11 @@ function shared_attributes end
 "A line child of an old-style plot."
 function lines! end
 function lines end
+"A recipe's conversion of its arguments, by plot type (upstream's cascade, the cases a recipe defines)."
+function convert_arguments end
+"A mesh child of an old-style plot."
+function mesh! end
+function mesh end
 end
 
 end
