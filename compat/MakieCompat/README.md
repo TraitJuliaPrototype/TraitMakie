@@ -111,4 +111,4 @@ TraitMakie b68d97a, julia-1.13 bfca89decc, TraitWorld ca92f22; product setting, 
 | the workload's step f and g graph plots against setting M (upstream GraphMakie, CairoMakie) | the 13 digest lines equal: node positions, edge line data, node and edge colours (RGBA × 255), step g's colours at each saved frame, its line and listeners (`../../../ndport/logs/r2-makie/`) |
 | GraphMakie's other features (`leaves-probe-1.log`) | node and edge labels, per-edge widths, named markers, a layout as points, attributes changed after the plot, curved edges draw; inner labels, directed graphs' arrows and dashed edges do not (listed under "Not yet") |
 | X3's checks of slices 1–5, the plotting session | 51 PNGs byte-equal to the run before (`../../../experiments/x3/logs/check-r2-regression.log`) |
-| after a late `using DataFrames`, the old-API leaves' path (`check_r2_lateload.jl`) | nothing recompiled (0 CodeInstances; `logs/lateload-r2.log`) |
+| after a late `using DataFrames`, the old-API leaves' path (`experiments/x3/check_r2_lateload.jl`) | nothing recompiled (0 CodeInstances; `../../../experiments/x3/logs/lateload-r2.log`) |
