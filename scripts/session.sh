@@ -11,7 +11,7 @@ LOCK=${LOCK:-/tmp/claude-1000/julia-review.lock}
 OUT=${TMPDIR:-/tmp}/traitmakie_session.out
 export JULIA_PKG_OFFLINE=true JULIA_TW_VIEWCACHE=0 LINES=40 COLUMNS=140
 flock "$LOCK" nice -n 19 timeout 1800 script -qec "$J --startup-file=no -i --banner=no --project=scripts/env" /dev/null \
-    < scripts/session.jl > "$OUT" 2>&1
+    < <(cat scripts/session.jl; echo 'exit()') > "$OUT" 2>&1   # exit() ends the REPL after the last line
 checks() { tr -d '\r' < "$OUT" | sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' | grep -ao 'CHECK .* \(ok\|FAIL\)$'; }
 errors() { tr -d '\r' < "$OUT" | sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g' | grep -a '^ERROR'; }
 checks
