@@ -5,10 +5,12 @@
 #   - `Sample`: what a histogram reads from data: values by index;
 #   - `ColorSpec`: a colour, or one per point;
 #   - `MarkerShape`: a marker's outline, one shape or one per point;
+#   - `Scale`: an axis's scale (`identity`, `log10`), with its ticks and their labels;
 #   - `Plot`: a recipe. Primitives (`Lines`, `Scatter`, `Bars`, `VLines`, `Poly`, `Labels`) draw;
 #     recipes with children (`Stairs`, `Hist`, `Band`) rebuild their children from their own
 #     data and attributes at each render, so a changed attribute or a live source shows on the
 #     next render. A user's recipe conforms too.
+# A figure holds axes in a grid; each axis keeps its plots and its scales.
 # Cairo is called directly (wrapping by facts, writeup/explorations/wrapping-by-facts.md): the
 # trait world may call any Julia code; its compiled code depends on Cairo's methods only through
 # dispatch facts at concrete signatures.
@@ -16,10 +18,10 @@
 using TraitWorld
 using Cairo: Cairo
 export Positions, npoints, pointx, pointy, Sample, nvalues, value, ColorSpec, rgba, MarkerShape, outline,
-       Plot, draw!, datalimits, setcolor!,
+       Scale, scaled, scaleticks, ticklabel, Plot, draw!, datalimits, setcolor!,
        Figure, Axis, Lines, Scatter, Bars, VLines, Poly, Labels, Stairs, Hist, Band, Canvas, Transform2D,
-       add_lines!, add_scatter!, add_bars!, add_vlines!, add_poly!, add_labels!, add_stairs!, add_hist!, add_band!,
-       add_plot!, render_png, newfigure, recolor!, NAMED, MARKERS
+       add_axis!, add_lines!, add_scatter!, add_bars!, add_vlines!, add_poly!, add_labels!, add_stairs!, add_hist!, add_band!,
+       add_plot!, render_png, newfigure, recolor!, nextcolor!, NAMED, MARKERS, PALETTE
 
 # --- the traits --------------------------------------------------------------------------------
 
@@ -109,6 +111,45 @@ end
     outline(m, i) = MARKERS[m[i].name]
 end
 
+"An axis's scale: data to scaled coordinates (`scaled`), and the ticks and their labels, in scaled coordinates."
+@trait Scale begin
+    scaled(s::Scale, x::Float64)::Float64
+    scaleticks(s::Scale, lo::Float64, hi::Float64, n::Int)::Vector{Float64}
+    ticklabel(s::Scale, v::Float64)::String
+end
+"Linear ticks: about `n` round values covering [lo, hi]."
+function linticks(lo::Float64, hi::Float64, n::Int)
+    span = hi - lo
+    span <= 0 && return [lo]
+    raw = span / n
+    mag = 10.0^floor(log10(raw))
+    step = raw / mag < 1.5 ? mag : raw / mag < 3.5 ? 2mag : raw / mag < 7.5 ? 5mag : 10mag
+    first = ceil(lo / step) * step
+    return collect(first:step:hi + 1e-9 * span)
+end
+numlabel(v::Float64) = abs(v - round(v)) < 1e-9 ? string(Int(round(v))) : string(round(v; sigdigits = 4))
+"Ticks at whole powers of ten (exponents from `lo` to `hi`), about `n` of them; linear ticks within a decade."
+function logticks(lo::Float64, hi::Float64, n::Int)
+    floor(hi) < ceil(lo) && return linticks(lo, hi, n)
+    lin = linticks(lo, hi, n)
+    step = length(lin) < 2 ? 1.0 : max(1.0, round(lin[2] - lin[1]))
+    return collect(ceil(lo / step) * step:step:hi)
+end
+const SUPERSCRIPTS = Dict('0' => '⁰', '1' => '¹', '2' => '²', '3' => '³', '4' => '⁴', '5' => '⁵', '6' => '⁶',
+                          '7' => '⁷', '8' => '⁸', '9' => '⁹', '-' => '⁻')
+"A tick's label on a log axis: `10⁻³` at a whole exponent, else the number."
+loglabel(v::Float64) = isinteger(v) ? "10" * map(ch -> SUPERSCRIPTS[ch], string(Int(v))) : numlabel(exp10(v))
+@implement Scale typeof(identity) begin
+    scaled(s, x) = x
+    scaleticks(s, lo, hi, n) = linticks(lo, hi, n)
+    ticklabel(s, v) = numlabel(v)
+end
+@implement Scale typeof(log10) begin
+    scaled(s, x) = log10(x)
+    scaleticks(s, lo, hi, n) = logticks(lo, hi, n)
+    ticklabel(s, v) = loglabel(v)
+end
+
 # --- the canvas: Cairo's surface and context, and the transform from data to pixels ------------------
 
 "Where a plot draws: a Cairo image surface and its context."
@@ -119,7 +160,10 @@ struct Canvas
     height::Int
 end
 
-"Data to pixels: an affine map per axis (pixel y grows downwards), and the plot area's top and bottom in pixels."
+"""
+Data to pixels: the axis's scales (kept values), then an affine map per axis of the scaled coordinates (pixel y grows
+downwards); the plot area's top and bottom in pixels.
+"""
 struct Transform2D
     ax::Float64
     bx::Float64
@@ -127,6 +171,8 @@ struct Transform2D
     by::Float64
     top::Float64
     bottom::Float64
+    xscale::Scale                   # Kept{Scale}
+    yscale::Scale
 end
 @inline px(t::Transform2D, x::Float64) = t.ax * x + t.bx
 @inline py(t::Transform2D, y::Float64) = t.ay * y + t.by
@@ -211,13 +257,13 @@ function limits(pos::Opened{Positions})::NTuple{4,Float64}
     end
     return (xmin, xmax, ymin, ymax)
 end
-function pixels(pos::Opened{Positions}, t::Transform2D)::Tuple{Vector{Float64},Vector{Float64}}
+function pixels(pos::Opened{Positions}, t::Transform2D, sx::Opened{Scale}, sy::Opened{Scale})::Tuple{Vector{Float64},Vector{Float64}}
     n = npoints(pos)
     xs = Vector{Float64}(undef, n)
     ys = Vector{Float64}(undef, n)
     for i in 1:n
-        xs[i] = px(t, pointx(pos, i))
-        ys[i] = py(t, pointy(pos, i))
+        xs[i] = px(t, scaled(sx, pointx(pos, i)))
+        ys[i] = py(t, scaled(sy, pointy(pos, i)))
     end
     return xs, ys
 end
@@ -285,11 +331,11 @@ function barlimits(pos::Opened{Positions}, w::Float64)::NTuple{4,Float64}
     xmin, xmax, ymin, ymax = limits(pos)
     return (xmin - w / 2, xmax + w / 2, min(ymin, 0.0), max(ymax, 0.0))
 end
-function drawbars(pos::Opened{Positions}, c::Canvas, t::Transform2D, col::Opened{ColorSpec}, w::Float64)::Nothing
+function drawbars(pos::Opened{Positions}, c::Canvas, t::Transform2D, sx::Opened{Scale}, sy::Opened{Scale}, col::Opened{ColorSpec}, w::Float64)::Nothing
     for i in 1:npoints(pos)
         x, y = pointx(pos, i), pointy(pos, i)
-        x0, x1 = px(t, x - w / 2), px(t, x + w / 2)
-        y0, y1 = py(t, 0.0), py(t, y)
+        x0, x1 = px(t, scaled(sx, x - w / 2)), px(t, scaled(sx, x + w / 2))
+        y0, y1 = py(t, scaled(sy, 0.0)), py(t, scaled(sy, y))
         fillrect!(c, x0, min(y0, y1), x1 - x0, abs(y1 - y0), rgba(col, i))
     end
     return nothing
@@ -298,16 +344,16 @@ function vlimits(pos::Opened{Positions})::NTuple{4,Float64}
     xmin, xmax, _, _ = limits(pos)
     return (xmin, xmax, Inf, -Inf)                  # no extent in y
 end
-function drawvlines(pos::Opened{Positions}, c::Canvas, t::Transform2D, col::Opened{ColorSpec}, lw::Float64)::Nothing
+function drawvlines(pos::Opened{Positions}, c::Canvas, t::Transform2D, sx::Opened{Scale}, col::Opened{ColorSpec}, lw::Float64)::Nothing
     for i in 1:npoints(pos)
-        x = px(t, pointx(pos, i))
+        x = px(t, scaled(sx, pointx(pos, i)))
         polyline!(c, [x, x], [t.top, t.bottom], rgba(col, i), lw)
     end
     return nothing
 end
-function drawlabels(pos::Opened{Positions}, c::Canvas, t::Transform2D, texts::Vector{String}, col::Opened{ColorSpec}, size::Float64, align::Symbol)::Nothing
+function drawlabels(pos::Opened{Positions}, c::Canvas, t::Transform2D, sx::Opened{Scale}, sy::Opened{Scale}, texts::Vector{String}, col::Opened{ColorSpec}, size::Float64, align::Symbol)::Nothing
     for i in 1:min(npoints(pos), length(texts))
-        text!(c, px(t, pointx(pos, i)), py(t, pointy(pos, i)), texts[i], size, align, rgba(col, i))
+        text!(c, px(t, scaled(sx, pointx(pos, i))), py(t, scaled(sy, pointy(pos, i))), texts[i], size, align, rgba(col, i))
     end
     return nothing
 end
@@ -320,23 +366,23 @@ datalimits(p::VLines) = vlimits(p.pos)
 datalimits(p::Poly) = limits(p.pos)
 datalimits(p::Labels) = limits(p.pos)
 function draw!(p::Lines, c::Canvas, t::Transform2D)
-    xs, ys = pixels(p.pos, t)
+    xs, ys = pixels(p.pos, t, t.xscale, t.yscale)
     polyline!(c, xs, ys, rgba(p.color, 1), p.linewidth)
     return nothing
 end
 function draw!(p::Scatter, c::Canvas, t::Transform2D)
-    xs, ys = pixels(p.pos, t)
+    xs, ys = pixels(p.pos, t, t.xscale, t.yscale)
     drawmarkers(p.marker, c, xs, ys, colors(p.color, length(xs)), p.markersize / 2)
     return nothing
 end
-draw!(p::Bars, c::Canvas, t::Transform2D) = drawbars(p.pos, c, t, p.color, p.width)
-draw!(p::VLines, c::Canvas, t::Transform2D) = drawvlines(p.pos, c, t, p.color, p.linewidth)
+draw!(p::Bars, c::Canvas, t::Transform2D) = drawbars(p.pos, c, t, t.xscale, t.yscale, p.color, p.width)
+draw!(p::VLines, c::Canvas, t::Transform2D) = drawvlines(p.pos, c, t, t.xscale, p.color, p.linewidth)
 function draw!(p::Poly, c::Canvas, t::Transform2D)
-    xs, ys = pixels(p.pos, t)
+    xs, ys = pixels(p.pos, t, t.xscale, t.yscale)
     polygon!(c, xs, ys, rgba(p.color, 1))
     return nothing
 end
-draw!(p::Labels, c::Canvas, t::Transform2D) = drawlabels(p.pos, c, t, p.texts, p.color, p.fontsize, p.align)
+draw!(p::Labels, c::Canvas, t::Transform2D) = drawlabels(p.pos, c, t, t.xscale, t.yscale, p.texts, p.color, p.fontsize, p.align)
 setcolor!(p::Lines, c::Kept{ColorSpec}) = (p.color = c; nothing)
 setcolor!(p::Scatter, c::Kept{ColorSpec}) = (p.color = c; nothing)
 setcolor!(p::Bars, c::Kept{ColorSpec}) = (p.color = c; nothing)
@@ -470,133 +516,155 @@ setcolor!(b::Band, c::Kept{ColorSpec}) = (b.color = c; nothing)
 @implement Plot Hist
 @implement Plot Band
 
-# --- figure, axis, rendering --------------------------------------------------------------------
+# --- figure, axes, rendering --------------------------------------------------------------------
 
-"An axis: its plots, each kept with its attribute (a trait's name in a container: Vector{Kept{Plot}})."
+"""
+An axis in a figure's grid cell (`row`, `col`): its plots, each kept with its attribute (a trait's name in a
+container: Vector{Kept{Plot}}), its scales (kept values: `identity`, `log10`, a user's), and its place in the palette.
+"""
 mutable struct Axis
     plots::Vector{Plot}
     title::String
     xlabel::String
     ylabel::String
+    xscale::Scale                   # Kept{Scale}
+    yscale::Scale
+    row::Int
+    col::Int
+    cycled::Int                     # plots given the palette's colours so far
 end
+"A figure: its size in units (pixels at `px_per_unit = 1`) and its axes, laid out in a grid of equal cells."
 struct Figure
     width::Int
     height::Int
-    axis::Axis
+    axes::Vector{Axis}
 end
+"Makie's default palette (`wong_colors`): a plot whose colour is not given takes the axis's next."
+const PALETTE = NTuple{4,Float64}[(0 / 255, 114 / 255, 178 / 255, 1.0), (230 / 255, 159 / 255, 0 / 255, 1.0),
+    (0 / 255, 158 / 255, 115 / 255, 1.0), (204 / 255, 121 / 255, 167 / 255, 1.0), (86 / 255, 180 / 255, 233 / 255, 1.0),
+    (213 / 255, 94 / 255, 0 / 255, 1.0), (240 / 255, 228 / 255, 66 / 255, 1.0)]
+"The axis's next colour of the palette."
+nextcolor!(ax::Axis) = (ax.cycled += 1; PALETTE[mod1(ax.cycled, length(PALETTE))])
 "Give plot `k` another colour, of any conforming type: a symbol, a vector, a user's gradient (one dispatch per change)."
-recolor!(f::Figure, k::Int, c::Dynamic{ColorSpec}) = setcolor!(f.axis.plots[k], c)   # Dynamic unless the caller casts
+recolor!(ax::Axis, k::Int, c::Dynamic{ColorSpec}) = setcolor!(ax.plots[k], c)   # Dynamic unless the caller casts
 
+"A figure with one linear axis."
 newfigure(width::Int, height::Int, title::String, xlabel::String, ylabel::String) =
-    Figure(width, height, Axis(Plot[], title, xlabel, ylabel))
+    Figure(width, height, Axis[Axis(Plot[], title, xlabel, ylabel, identity, identity, 1, 1, 0)])
 newfigure(width::Int, height::Int, title::String) = newfigure(width, height, title, "", "")
+"Add an axis in cell (`row`, `col`) with scales of any conforming type: `Dynamic` unless the caller casts them."
+function add_axis!(f::Figure, row::Int, col::Int, xscale::Dynamic{Scale}, yscale::Dynamic{Scale}, title::String, xlabel::String, ylabel::String)
+    (row >= 1 && col >= 1) || throw(ArgumentError("a grid cell is (row, col) from (1, 1), not ($row, $col)"))
+    ax = Axis(Plot[], title, xlabel, ylabel, xscale, yscale, row, col, 0)
+    push!(f.axes, ax)
+    return ax
+end
 
-"Add a plot of any conforming type (a user's recipe) to the figure: `Dynamic` unless the caller casts it."
-add_plot!(f::Figure, p::Dynamic{Plot}) = (push!(f.axis.plots, p); nothing)
+"Add a plot of any conforming type (a user's recipe) to the axis: `Dynamic` unless the caller casts it."
+add_plot!(ax::Axis, p::Dynamic{Plot}) = (push!(ax.plots, p); nothing)
 # the library's recipes, made from bounded arguments, `Dynamic` by default (compiled once) unless the
 # caller casts them; each returns the plot, kept in the axis
-function add_lines!(f::Figure, pos::Dynamic{Positions}, color::Dynamic{ColorSpec}, linewidth::Float64)
+function add_lines!(ax::Axis, pos::Dynamic{Positions}, color::Dynamic{ColorSpec}, linewidth::Float64)
     p = Lines(pos, color, linewidth)
-    push!(f.axis.plots, Dynamic{Plot}(p))
+    push!(ax.plots, Dynamic{Plot}(p))
     return p
 end
-function add_scatter!(f::Figure, pos::Dynamic{Positions}, color::Dynamic{ColorSpec}, markersize::Float64, marker::Dynamic{MarkerShape})
+function add_scatter!(ax::Axis, pos::Dynamic{Positions}, color::Dynamic{ColorSpec}, markersize::Float64, marker::Dynamic{MarkerShape})
     p = Scatter(pos, color, markersize, marker)
-    push!(f.axis.plots, Dynamic{Plot}(p))
+    push!(ax.plots, Dynamic{Plot}(p))
     return p
 end
-function add_bars!(f::Figure, pos::Dynamic{Positions}, color::Dynamic{ColorSpec}, width::Float64)
+function add_bars!(ax::Axis, pos::Dynamic{Positions}, color::Dynamic{ColorSpec}, width::Float64)
     p = Bars(pos, color, width)
-    push!(f.axis.plots, Dynamic{Plot}(p))
+    push!(ax.plots, Dynamic{Plot}(p))
     return p
 end
-function add_vlines!(f::Figure, pos::Dynamic{Positions}, color::Dynamic{ColorSpec}, linewidth::Float64)
+function add_vlines!(ax::Axis, pos::Dynamic{Positions}, color::Dynamic{ColorSpec}, linewidth::Float64)
     p = VLines(pos, color, linewidth)
-    push!(f.axis.plots, Dynamic{Plot}(p))
+    push!(ax.plots, Dynamic{Plot}(p))
     return p
 end
-function add_poly!(f::Figure, pos::Dynamic{Positions}, color::Dynamic{ColorSpec})
+function add_poly!(ax::Axis, pos::Dynamic{Positions}, color::Dynamic{ColorSpec})
     p = Poly(pos, color)
-    push!(f.axis.plots, Dynamic{Plot}(p))
+    push!(ax.plots, Dynamic{Plot}(p))
     return p
 end
-function add_labels!(f::Figure, pos::Dynamic{Positions}, texts::Vector{String}, color::Dynamic{ColorSpec}, fontsize::Float64, align::Symbol)
+function add_labels!(ax::Axis, pos::Dynamic{Positions}, texts::Vector{String}, color::Dynamic{ColorSpec}, fontsize::Float64, align::Symbol)
     p = Labels(pos, texts, color, fontsize, align)
-    push!(f.axis.plots, Dynamic{Plot}(p))
+    push!(ax.plots, Dynamic{Plot}(p))
     return p
 end
 const NOPOINTS = Matrix{Float64}(undef, 0, 2)
-function add_stairs!(f::Figure, pos::Dynamic{Positions}, step::Symbol, color::Dynamic{ColorSpec}, linewidth::Float64)
+function add_stairs!(ax::Axis, pos::Dynamic{Positions}, step::Symbol, color::Dynamic{ColorSpec}, linewidth::Float64)
     c = color
     p = Stairs(pos, step, c, linewidth, Lines(Dynamic{Positions}(NOPOINTS), c, linewidth))
-    push!(f.axis.plots, Dynamic{Plot}(p))
+    push!(ax.plots, Dynamic{Plot}(p))
     return p
 end
-function add_hist!(f::Figure, values::Dynamic{Sample}, bins::Int, color::Dynamic{ColorSpec})
+function add_hist!(ax::Axis, values::Dynamic{Sample}, bins::Int, color::Dynamic{ColorSpec})
     c = color
     p = Hist(values, bins, c, Bars(Dynamic{Positions}(NOPOINTS), c, 1.0))
-    push!(f.axis.plots, Dynamic{Plot}(p))
+    push!(ax.plots, Dynamic{Plot}(p))
     return p
 end
-function add_band!(f::Figure, lower::Dynamic{Positions}, upper::Dynamic{Positions}, color::Dynamic{ColorSpec})
+function add_band!(ax::Axis, lower::Dynamic{Positions}, upper::Dynamic{Positions}, color::Dynamic{ColorSpec})
     c = color
     p = Band(lower, upper, c, Poly(Dynamic{Positions}(NOPOINTS), c))
-    push!(f.axis.plots, Dynamic{Plot}(p))
+    push!(ax.plots, Dynamic{Plot}(p))
     return p
 end
 
-"Linear ticks: about `n` round values covering [lo, hi]."
-function ticks(lo::Float64, hi::Float64, n::Int)
-    span = hi - lo
-    span <= 0 && return [lo]
-    raw = span / n
-    mag = 10.0^floor(log10(raw))
-    step = raw / mag < 1.5 ? mag : raw / mag < 3.5 ? 2mag : raw / mag < 7.5 ? 5mag : 10mag
-    first = ceil(lo / step) * step
-    return collect(first:step:hi + 1e-9 * span)
-end
-ticklabel(v::Float64) = abs(v - round(v)) < 1e-9 ? string(Int(round(v))) : string(round(v; sigdigits = 4))
-
-"Render a figure into a PNG file."
-function render_png(f::Figure, path::String)
-    W, H = f.width, f.height
-    c = newcanvas(W, H)
-    fillrect!(c, 0.0, 0.0, Float64(W), Float64(H), (1.0, 1.0, 1.0, 1.0))
-    ax = f.axis
+"Draw an axis into its cell, whose top left corner is (`x0`, `y0`) and size `w` × `h`."
+function drawaxis!(c::Canvas, ax::Axis, x0::Float64, y0::Float64, w::Float64, h::Float64)
     xmin, xmax, ymin, ymax = Inf, -Inf, Inf, -Inf
     for p in ax.plots
         l = datalimits(p)                              # one dispatch per plot
         xmin = min(xmin, l[1]); xmax = max(xmax, l[2]); ymin = min(ymin, l[3]); ymax = max(ymax, l[4])
     end
-    if !isfinite(xmin) || !isfinite(xmax)
-        xmin, xmax = 0.0, 1.0
-    end
-    if !isfinite(ymin) || !isfinite(ymax)
-        ymin, ymax = 0.0, 1.0
-    end
+    sx, sy = ax.xscale, ax.yscale
+    xmin, xmax = isfinite(xmin) && isfinite(xmax) ? (scaled(sx, xmin), scaled(sx, xmax)) : (0.0, 1.0)
+    ymin, ymax = isfinite(ymin) && isfinite(ymax) ? (scaled(sy, ymin), scaled(sy, ymax)) : (0.0, 1.0)
     dx, dy = 0.05 * max(xmax - xmin, 1e-12), 0.05 * max(ymax - ymin, 1e-12)
     xmin -= dx; xmax += dx; ymin -= dy; ymax += dy
-    l, r, top, b = 60.0, W - 20.0, 40.0, H - 40.0     # the plot area
+    l, r, top, b = x0 + 60.0, x0 + w - 20.0, y0 + 40.0, y0 + h - 40.0     # the plot area
     t = Transform2D((r - l) / (xmax - xmin), l - (r - l) / (xmax - xmin) * xmin,
-                    -(b - top) / (ymax - ymin), b + (b - top) / (ymax - ymin) * ymin, top, b)
+                    -(b - top) / (ymax - ymin), b + (b - top) / (ymax - ymin) * ymin, top, b, sx, sy)
     black, gray = (0.0, 0.0, 0.0, 1.0), (0.85, 0.85, 0.85, 1.0)
-    for v in ticks(xmin, xmax, 6)
+    for v in scaleticks(sx, xmin, xmax, 6)
         polyline!(c, [px(t, v), px(t, v)], [top, b], gray, 0.5)
-        text!(c, px(t, v), b + 16.0, ticklabel(v), 11.0, :center, black)
+        text!(c, px(t, v), b + 16.0, ticklabel(sx, v), 11.0, :center, black)
     end
-    for v in ticks(ymin, ymax, 5)
+    for v in scaleticks(sy, ymin, ymax, 5)
         polyline!(c, [l, r], [py(t, v), py(t, v)], gray, 0.5)
-        text!(c, l - 6.0, py(t, v) + 4.0, ticklabel(v), 11.0, :right, black)
+        text!(c, l - 6.0, py(t, v) + 4.0, ticklabel(sy, v), 11.0, :right, black)
     end
     polyline!(c, [l, r, r, l, l], [top, top, b, b, top], black, 1.0)
-    isempty(ax.title) || text!(c, (l + r) / 2, 24.0, ax.title, 14.0, :center, black)
-    isempty(ax.xlabel) || text!(c, (l + r) / 2, H - 8.0, ax.xlabel, 12.0, :center, black)
-    isempty(ax.ylabel) || vtext!(c, 14.0, (top + b) / 2, ax.ylabel, 12.0)
+    isempty(ax.title) || text!(c, (l + r) / 2, y0 + 24.0, ax.title, 14.0, :center, black)
+    isempty(ax.xlabel) || text!(c, (l + r) / 2, y0 + h - 8.0, ax.xlabel, 12.0, :center, black)
+    isempty(ax.ylabel) || vtext!(c, x0 + 14.0, (top + b) / 2, ax.ylabel, 12.0)
     for p in ax.plots
         draw!(p, c, t)                                 # one dispatch per plot; its loops run compiled per key
+    end
+    return nothing
+end
+
+"Render a figure into a PNG file, `px_per_unit` pixels per unit of the figure's size."
+function render_png(f::Figure, path::String, px_per_unit::Float64)
+    W, H = f.width, f.height
+    c = newcanvas(round(Int, W * px_per_unit), round(Int, H * px_per_unit))
+    px_per_unit == 1.0 || Cairo.scale(c.ctx, px_per_unit, px_per_unit)
+    fillrect!(c, 0.0, 0.0, Float64(W), Float64(H), (1.0, 1.0, 1.0, 1.0))
+    rows, cols = 1, 1
+    for ax in f.axes
+        rows = max(rows, ax.row); cols = max(cols, ax.col)
+    end
+    w, h = W / cols, H / rows
+    for ax in f.axes
+        drawaxis!(c, ax, (ax.col - 1) * w, (ax.row - 1) * h, w, h)
     end
     writepng(c, path)
     return nothing
 end
+render_png(f::Figure, path::String) = render_png(f, path, 1.0)
 
 end

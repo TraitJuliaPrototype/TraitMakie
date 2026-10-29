@@ -3,7 +3,9 @@
 
 A plotting library written as a trait module (`PlotCore`), with an ordinary layer that offers a
 Makie-like interface: `lines(x, y)`, `scatter!(fig, x, y)`, `p = hist!(fig, x)`, `p.color = :red`,
-`save(path, fig)`. The second demonstrator of the trait world's viability; see README.md.
+`save(path, fig)`; and upstream Makie's user API for figures with axes: `fig = Figure(size = (800, 600))`,
+`ax = Axis(fig[2, 1]; xscale = log10)`, `lines!(ax, x, y)`, `save(path, fig; px_per_unit = 1)`.
+The second demonstrator of the trait world's viability; see README.md.
 
 This module is the ordinary one that pairs with the trait module. It converts arguments such as
 `x, y` vectors into one value the trait module's bounds take (note "Types that only convert"),
@@ -20,9 +22,9 @@ using TraitWorld
 
 include("PlotCore.jl")
 using .PlotCore
-export lines, lines!, scatter, scatter!, barplot, barplot!, hist, hist!, vlines!, stairs, stairs!, band, band!,
+export Figure, Axis, lines, lines!, scatter, scatter!, barplot, barplot!, hist, hist!, vlines!, stairs, stairs!, band, band!,
        poly, poly!, text!, plot!, save, figure, recolor!, Live, onchange,
-       Positions, npoints, pointx, pointy, Sample, nvalues, value, ColorSpec, rgba, MarkerShape, outline, Plot,
+       Positions, npoints, pointx, pointy, Sample, nvalues, value, ColorSpec, rgba, MarkerShape, outline, Scale, Plot,
        Lines, Scatter, Bars, VLines, Poly, Labels, Stairs, Hist, Band
 
 # --- names, checked where they are given ------------------------------------------------------------
@@ -68,41 +70,43 @@ Base.convert(::Type{Sample}, x::AbstractVector{<:Real}) = _sample(x)
 figure(; size = (600, 400), title = "", xlabel = "", ylabel = "") =
     PlotCore.newfigure(Int(size[1]), Int(size[2]), String(title), String(xlabel), String(ylabel))
 const Fig = PlotCore.Figure
+"The axis a figure's own calls (`lines!(fig, …)`) draw into: its first."
+_axis(fig::Fig) = isempty(fig.axes) ? throw(ArgumentError("the figure has no axis; add one with `Axis(fig[1, 1])`")) : fig.axes[1]
 
 # Each `f!(fig, …)` adds a plot and returns it; its attributes may be changed later (`p.color = x`).
 lines!(fig::Fig, x::AbstractVector, y::AbstractVector; kw...) = lines!(fig, _xy(x, y); kw...)
 lines!(fig::Fig, data; color = :blue, linewidth = 1.5) =                     # data conforming to Positions
-    PlotCore.add_lines!(fig, data, _color(color), Float64(linewidth))
+    PlotCore.add_lines!(_axis(fig), data, _color(color), Float64(linewidth))
 scatter!(fig::Fig, x::AbstractVector, y::AbstractVector; kw...) = scatter!(fig, _xy(x, y); kw...)
 scatter!(fig::Fig, data; color = :black, markersize = 6, marker = :circle) =
-    PlotCore.add_scatter!(fig, data, _color(color), Float64(markersize), _marker(marker))
+    PlotCore.add_scatter!(_axis(fig), data, _color(color), Float64(markersize), _marker(marker))
 barplot!(fig::Fig, x::AbstractVector, y::AbstractVector; color = :blue, width = nothing) =
-    PlotCore.add_bars!(fig, _xy(x, y), _color(color), Float64(something(width, _gap(x))))
+    PlotCore.add_bars!(_axis(fig), _xy(x, y), _color(color), Float64(something(width, _gap(x))))
 "Bars' default width: 80% of the smallest gap between neighbouring x."
 _gap(x) = length(x) < 2 ? 1.0 : 0.8 * minimum(diff(sort(Vector{Float64}(x))))
 "A histogram of `x` (a vector of numbers, or a value conforming to `Sample`) in `bins` equal bins: a recipe whose child is a `Bars`."
-hist!(fig::Fig, x; bins::Integer = 10, color = :blue) = PlotCore.add_hist!(fig, _sample(x), _bins(bins), _color(color))
+hist!(fig::Fig, x; bins::Integer = 10, color = :blue) = PlotCore.add_hist!(_axis(fig), _sample(x), _bins(bins), _color(color))
 "Vertical lines at `xs` across the plot area."
 vlines!(fig::Fig, xs::AbstractVector; color = :black, linewidth = 1.5) =
-    PlotCore.add_vlines!(fig, _xy(xs, zeros(length(xs))), _color(color), Float64(linewidth))
+    PlotCore.add_vlines!(_axis(fig), _xy(xs, zeros(length(xs))), _color(color), Float64(linewidth))
 vlines!(fig::Fig, x::Real; kw...) = vlines!(fig, [x]; kw...)
 "A step line through points; `step` is `:pre` (default), `:post` or `:center`. A recipe whose child is a `Lines`."
 stairs!(fig::Fig, x::AbstractVector, y::AbstractVector; kw...) = stairs!(fig, _xy(x, y); kw...)
 stairs!(fig::Fig, data; step = :pre, color = :blue, linewidth = 1.5) =
-    PlotCore.add_stairs!(fig, data, _step(step), _color(color), Float64(linewidth))
+    PlotCore.add_stairs!(_axis(fig), data, _step(step), _color(color), Float64(linewidth))
 "A band between `lower` and `upper` at `x`. A recipe whose child is a `Poly`."
 band!(fig::Fig, x::AbstractVector, lower::AbstractVector, upper::AbstractVector; kw...) = band!(fig, _xy(x, lower), _xy(x, upper); kw...)
-band!(fig::Fig, lower, upper; color = (0.12, 0.35, 0.8, 0.3)) = PlotCore.add_band!(fig, lower, upper, _color(color))
+band!(fig::Fig, lower, upper; color = (0.12, 0.35, 0.8, 0.3)) = PlotCore.add_band!(_axis(fig), lower, upper, _color(color))
 "A filled polygon through points."
 poly!(fig::Fig, x::AbstractVector, y::AbstractVector; kw...) = poly!(fig, _xy(x, y); kw...)
-poly!(fig::Fig, data; color = :gray) = PlotCore.add_poly!(fig, data, _color(color))
+poly!(fig::Fig, data; color = :gray) = PlotCore.add_poly!(_axis(fig), data, _color(color))
 "Text `texts[i]` at point `i`."
 text!(fig::Fig, x::AbstractVector, y::AbstractVector, texts::AbstractVector; kw...) = text!(fig, _xy(x, y), texts; kw...)
 text!(fig::Fig, x::Real, y::Real, s::AbstractString; kw...) = text!(fig, [x], [y], [s]; kw...)
 text!(fig::Fig, data, texts::AbstractVector; color = :black, fontsize = 11, align = :left) =
-    PlotCore.add_labels!(fig, data, String[string(s) for s in texts], _color(color), Float64(fontsize), _align(align))
+    PlotCore.add_labels!(_axis(fig), data, String[string(s) for s in texts], _color(color), Float64(fontsize), _align(align))
 "Add a plot of a user's recipe (a value of a type conforming to `Plot`) and return it."
-plot!(fig::Fig, p) = (PlotCore.add_plot!(fig, p); p)
+plot!(fig::Fig, p) = (PlotCore.add_plot!(_axis(fig), p); p)
 
 # `f(args…)` makes a figure with one plot and returns the figure
 for f in (:lines, :scatter, :barplot, :hist, :stairs, :band, :poly)
@@ -112,10 +116,41 @@ for f in (:lines, :scatter, :barplot, :hist, :stairs, :band, :poly)
 end
 
 "Give the figure's plot `k` another colour: any value `ColorSpec` takes, whatever the colour was before."
-recolor!(fig::Fig, k::Integer, color) = (PlotCore.recolor!(fig, Int(k), _color(color)); fig)
+recolor!(fig::Fig, k::Integer, color) = (PlotCore.recolor!(_axis(fig), Int(k), _color(color)); fig)
 
-"Render the figure into a PNG file."
-save(path::AbstractString, fig::Fig) = (PlotCore.render_png(fig, String(path)); path)
+"Render the figure into a PNG file, `px_per_unit` pixels per unit of the figure's size."
+save(path::AbstractString, fig::Fig; px_per_unit::Real = 1) = (PlotCore.render_png(fig, String(path), Float64(px_per_unit)); path)
+
+# --- upstream Makie's user API for figures with axes ------------------------------------------------
+#
+# The calls of a Makie session, unchanged: `Figure(size = …)`, `fig[r, c]`, `Axis(fig[r, c]; xscale = log10)`,
+# `lines!(ax, x, y)`, `save(path, fig; px_per_unit = 1)`. Each maps to the core's figure, axes and primitives.
+
+"Upstream's `Figure(; size)`: a figure with no axis yet; `Axis(fig[r, c])` adds one."
+PlotCore.Figure(; size = (600, 450)) = PlotCore.Figure(Int(size[1]), Int(size[2]), PlotCore.Axis[])
+"A cell of a figure's grid, `fig[r, c]`: where an `Axis` goes."
+struct GridPosition
+    fig::Fig
+    row::Int
+    col::Int
+end
+Base.getindex(fig::Fig, r::Integer, c::Integer) = GridPosition(fig, Int(r), Int(c))
+"""
+Upstream's `Axis(fig[r, c]; xscale, yscale, title, xlabel, ylabel)`: an axis in that cell. A scale is any value
+conforming to `Scale` (`identity`, `log10`, a user's).
+"""
+PlotCore.Axis(gp::GridPosition; xscale = identity, yscale = identity, title = "", xlabel = "", ylabel = "") =
+    PlotCore.add_axis!(gp.fig, gp.row, gp.col, xscale, yscale, String(title), String(xlabel), String(ylabel))
+const Ax = PlotCore.Axis
+"A plot's colour: as given, else the axis's next of the palette (upstream's cycle)."
+_cycled(ax::Ax, color) = color === nothing ? PlotCore.nextcolor!(ax) : _color(color)
+lines!(ax::Ax, x::AbstractVector, y::AbstractVector; kw...) = lines!(ax, _xy(x, y); kw...)
+lines!(ax::Ax, data; color = nothing, linewidth = 1.5) = PlotCore.add_lines!(ax, data, _cycled(ax, color), Float64(linewidth))
+scatter!(ax::Ax, x::AbstractVector, y::AbstractVector; kw...) = scatter!(ax, _xy(x, y); kw...)
+scatter!(ax::Ax, data; color = nothing, markersize = 9, marker = :circle) =
+    PlotCore.add_scatter!(ax, data, _cycled(ax, color), Float64(markersize), _marker(marker))
+"Add a plot of a user's recipe to the axis and return it."
+plot!(ax::Ax, p) = (PlotCore.add_plot!(ax, p); p)
 
 # --- live data -------------------------------------------------------------------------------------
 
@@ -190,6 +225,13 @@ TraitWorld.@workload begin
     lv[] = [0.0 1.0; 1.0 0.0; 2.0 1.0]
     lh[] = [0.0, 3.0]
     save(path, lf)
+    fu = Figure(size = (400, 300))                                               # upstream's user API: two axes, a log axis
+    a1 = Axis(fu[1, 1]); a2 = Axis(fu[2, 1]; xscale = log10)
+    for k in 1:3
+        lines!(a1, xs, sin.(k .* xs))
+        lines!(a2, exp10.(xs), cos.(k .* xs))
+    end
+    save(path, fu; px_per_unit = 1)
     rm(path; force = true)
 end
 

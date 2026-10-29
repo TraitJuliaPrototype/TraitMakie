@@ -14,6 +14,12 @@ struct Star; n::Int; end                            # a marker of the user's own
 TraitMakie.outline(s::Star, i::Int) = [(k % 2 == 0 ? 1.2 : 0.5) .* (sin(pi * k / s.n), -cos(pi * k / s.n)) for k in 0:2s.n-1]
 @implement MarkerShape Star
 
+struct Squared; end                                 # an axis scale of the user's own
+TraitMakie.PlotCore.scaled(::Squared, x::Float64) = x^2
+TraitMakie.PlotCore.scaleticks(::Squared, lo::Float64, hi::Float64, n::Int) = TraitMakie.PlotCore.linticks(lo, hi, n)
+TraitMakie.PlotCore.ticklabel(::Squared, v::Float64) = string(round(sqrt(max(v, 0.0)); digits = 2))
+@implement Scale Squared
+
 mutable struct Sensor; label::String; readings::Vector{NTuple{2,Float64}}; end
 @implement Positions Sensor by readings             # a live source of the user's own: read at each render
 
@@ -45,7 +51,7 @@ function pngpixels(path)
 end
 "The fraction of pixels that differ between two PNG files (1.0 if their sizes differ)."
 pngdiff(a, b) = (A = pngpixels(a); B = pngpixels(b); size(A) == size(B) ? count(A .!= B) / length(A) : 1.0)
-datalim(f, k) = TraitMakie.datalimits(f.axis.plots[k])
+datalim(f, k) = TraitMakie.datalimits(f.axes[1].plots[k])
 const OUT = mktempdir()
 png(name) = joinpath(OUT, name * ".png")
 
@@ -53,7 +59,7 @@ png(name) = joinpath(OUT, name * ".png")
     xs = collect(range(0.0, 2pi; length = 100))
     f = lines(xs, sin.(xs); title = "t")
     scatter!(f, xs, cos.(xs); color = :red)
-    @test length(f.axis.plots) == 2
+    @test length(f.axes[1].plots) == 2
     p = save(tempname() * ".png", f)
     @test isfile(p) && filesize(p) > 1000
     # the user's data type and colour: one-line conformances
@@ -174,6 +180,24 @@ end
     push!(sn.readings, (20.0, -3.0))
     @test datalim(f, 3) == (0.0, 20.0, -3.0, 0.0)
     @test isfile(save(png("live2"), f))
+end
+
+@testset "TraitMakie: upstream Makie's user API for figures with axes" begin
+    xs = collect(range(0.1, 10.0; length = 50))
+    fig = Figure(size = (500, 400))
+    a1 = Axis(fig[1, 1]); a2 = Axis(fig[2, 1]; xscale = log10, title = "log")
+    l1 = lines!(a1, xs, sin.(xs)); l2 = lines!(a1, xs, cos.(xs)); l3 = lines!(a1, xs, xs; color = :red)
+    lines!(a2, exp10.(xs), xs)
+    @test length(fig.axes) == 2 && length(a1.plots) == 3 && length(a2.plots) == 1
+    @test rgba(l1.color, 1) == PC.PALETTE[1] && rgba(l2.color, 1) == PC.PALETTE[2]   # the palette's cycle
+    @test PC.scaleticks(log10, -0.5, 10.5, 6) == [0.0, 2.0, 4.0, 6.0, 8.0, 10.0]
+    @test PC.ticklabel(log10, -3.0) == "10⁻³" && PC.ticklabel(identity, 2.5) == "2.5"
+    @test_throws MethodError Axis(fig[1, 2]; xscale = sqrt)                       # sqrt does not conform to Scale
+    @test pngpixels(save(png("upstream1"), fig)) |> size == (500, 400)
+    @test pngpixels(save(png("upstream2"), fig; px_per_unit = 2)) |> size == (1000, 800)
+    @test_throws ArgumentError lines!(Figure(), xs, xs)                          # a figure without an axis
+    ax = Axis(fig[1, 2]; yscale = Squared()); lines!(ax, xs, xs)   # a user's scale
+    @test isfile(save(png("upstream3"), fig))
 end
 
 include("figures.jl")

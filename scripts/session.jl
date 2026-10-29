@@ -13,7 +13,7 @@ save(png("1"), f); _ok("first PNG", filesize(png("1")) > 1000)
 struct Track; name::String; pts::Vector{NTuple{2,Float64}}; end
 @implement Positions Track by pts
 tr = lines!(f, Track("t", [(0.0, 0.0), (7.0, 2.0)]); color = :green)
-_ok("a new data type", TraitMakie.datalimits(f.axis.plots[3]) == (0.0, 7.0, 0.0, 2.0))
+_ok("a new data type", TraitMakie.datalimits(f.axes[1].plots[3]) == (0.0, 7.0, 0.0, 2.0))
 # attributes changed on plots already made: colour and marker change shape
 p.color = :red
 p.marker = :diamond
@@ -41,7 +41,7 @@ TraitMakie.PlotCore.setcolor!(l::Lollipop, c::Dynamic{ColorSpec}) = (l.tips.colo
 @implement Plot Lollipop
 g = figure(; title = "lollipops")
 lp = plot!(g, Lollipop([1.0, 2.0, 3.0], [2.0, -1.0, 3.0]))
-save(png("4"), g); _ok("a new plot type", TraitMakie.datalimits(g.axis.plots[1]) == (0.98, 3.02, -1.0, 3.0))
+save(png("4"), g); _ok("a new plot type", TraitMakie.datalimits(g.axes[1].plots[1]) == (0.98, 3.02, -1.0, 3.0))
 lp.tips.marker = :rect
 recolor!(g, 1, :blue)
 save(png("5"), g); _ok("its attributes changed", TraitMakie.rgba(lp.tips.color, 1) == TraitMakie.PlotCore.NAMED[:blue])
@@ -55,5 +55,5 @@ lv = Live([(0.0, 0.0), (1.0, 1.0)])
 lines!(g, lv; color = :purple)
 onchange(_ -> save(png("7"), g), lv)
 lv[] = [(0.0, 4.0), (5.0, -2.0)]
-_ok("live data", isfile(png("7")) && TraitMakie.datalimits(g.axis.plots[3]) == (0.0, 5.0, -2.0, 4.0))
+_ok("live data", isfile(png("7")) && TraitMakie.datalimits(g.axes[1].plots[3]) == (0.0, 5.0, -2.0, 4.0))
 _ok("session done", true)
