@@ -3,6 +3,7 @@ uuid = "5b0f4c2e-8a51-4d3e-9c77-2f6a1e0b8d43"
 version = "0.0.1"
 
 [deps]
+GeometryBasics = "5c1252a2-5f33-56bf-86c9-59e7332b4326"
 Observables = "510215fc-4207-5dde-b226-833fc4488ee2"
 TraitMakie = "46a11cac-d2c9-498a-a901-1fb9b8611426"
 TraitWorld = "7a3c1e52-9b4d-4f6e-8a21-5d0c3b9e7f14"
@@ -10,3 +11,6 @@ TraitWorld = "7a3c1e52-9b4d-4f6e-8a21-5d0c3b9e7f14"
 [sources]
 TraitMakie = {path = "../.."}
 TraitWorld = {path = "../../../TraitWorld"}
+
+[compat]
+GeometryBasics = "0.5"

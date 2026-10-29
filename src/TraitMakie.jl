@@ -23,9 +23,9 @@ using TraitWorld
 include("PlotCore.jl")
 using .PlotCore
 export Figure, Axis, lines, lines!, scatter, scatter!, barplot, barplot!, hist, hist!, vlines!, stairs, stairs!, band, band!,
-       poly, poly!, text!, plot!, save, figure, recolor!, Live, onchange,
+       poly, poly!, text!, linesegments!, plot!, save, figure, recolor!, hidedecorations!, limits!, Live, onchange,
        Positions, npoints, pointx, pointy, Sample, nvalues, value, ColorSpec, rgba, MarkerShape, outline, Scale, Plot,
-       Lines, Scatter, Bars, VLines, Poly, Labels, Stairs, Hist, Band
+       Colormap, MappedColors, Lines, Scatter, Bars, VLines, Poly, Labels, Stairs, Hist, Band
 
 # --- names, checked where they are given ------------------------------------------------------------
 
@@ -35,7 +35,32 @@ _color(c::NTuple{4,<:Real}) = NTuple{4,Float64}(c)
 _color(c::NTuple{3,<:Real}) = (Float64(c[1]), Float64(c[2]), Float64(c[3]), 1.0)
 _color(c::AbstractVector{Symbol}) = PlotCore.ColorName[PlotCore.ColorName(s) for s in c]
 _color(c::AbstractVector{<:Tuple}) = NTuple{4,Float64}[_color(x) for x in c]
+_color(c::AbstractVector{<:Real}) = _color(c, :viridis, nothing)
 _color(c) = c                                       # a user's type conforming to ColorSpec
+"""
+A colour given with a colormap and a colour range (upstream's `color`, `colormap`, `colorrange`): numbers, one per point,
+are mapped through the colormap, the range `nothing` taken from the numbers; any other colour is taken as it is.
+"""
+_color(c::AbstractVector{<:Real}, colormap, colorrange) =
+    PlotCore.MappedColors(Vector{Float64}(c), _colormap(colormap), _crange(c, colorrange)...)
+_color(c::Real, colormap, colorrange) = _color([c], colormap, colorrange)
+_color(c, colormap, colorrange) = _color(c)
+_colormap(m::Symbol) = PlotCore.ColormapName(m)
+_colormap(m::AbstractVector) = NTuple{4,Float64}[_rgba(_color(x)) for x in m]
+_colormap(m) = m                                    # a user's type conforming to Colormap
+_rgba(c::PlotCore.ColorName) = PlotCore.NAMED[c.name]
+_rgba(c::NTuple{4,Float64}) = c
+"The colour range: as given, else the finite numbers' extrema (widened by ½ either side where they are one value)."
+_crange(c, r::Tuple{Real,Real}) = (Float64(r[1]), Float64(r[2]))
+function _crange(c, ::Nothing)
+    lo, hi = Inf, -Inf
+    for v in c
+        isfinite(v) || continue
+        lo = min(lo, Float64(v)); hi = max(hi, Float64(v))
+    end
+    isfinite(lo) || return (0.0, 1.0)
+    return lo < hi ? (lo, hi) : (lo - 0.5, hi + 0.5)
+end
 _marker(m::Symbol) = PlotCore.MarkerName(m)
 _marker(m::AbstractVector{Symbol}) = PlotCore.MarkerName[PlotCore.MarkerName(s) for s in m]
 _marker(m) = m
@@ -144,13 +169,34 @@ PlotCore.Axis(gp::GridPosition; xscale = identity, yscale = identity, title = ""
 const Ax = PlotCore.Axis
 "A plot's colour: as given, else the axis's next of the palette (upstream's cycle)."
 _cycled(ax::Ax, color) = color === nothing ? PlotCore.nextcolor!(ax) : _color(color)
+_cycled(ax::Ax, color, colormap, colorrange) = color === nothing ? PlotCore.nextcolor!(ax) : _color(color, colormap, colorrange)
 lines!(ax::Ax, x::AbstractVector, y::AbstractVector; kw...) = lines!(ax, _xy(x, y); kw...)
-lines!(ax::Ax, data; color = nothing, linewidth = 1.5) = PlotCore.add_lines!(ax, data, _cycled(ax, color), Float64(linewidth))
+lines!(ax::Ax, data; color = nothing, linewidth = 1.5, colormap = :viridis, colorrange = nothing) =
+    PlotCore.add_lines!(ax, data, _cycled(ax, color, colormap, colorrange), Float64(linewidth))
 scatter!(ax::Ax, x::AbstractVector, y::AbstractVector; kw...) = scatter!(ax, _xy(x, y); kw...)
-scatter!(ax::Ax, data; color = nothing, markersize = 9, marker = :circle) =
-    PlotCore.add_scatter!(ax, data, _cycled(ax, color), Float64(markersize), _marker(marker))
+scatter!(ax::Ax, data; color = nothing, markersize = 9, marker = :circle, colormap = :viridis, colorrange = nothing) =
+    PlotCore.add_scatter!(ax, data, _cycled(ax, color, colormap, colorrange), Float64(markersize), _marker(marker))
+"Line segments between points 1 and 2, 3 and 4, …: one line each."
+function linesegments!(ax::Ax, data; color = nothing, linewidth = 1.5, linestyle = nothing)
+    c = _cycled(ax, color)
+    n = npoints(data)
+    for k in 1:2:n-1
+        PlotCore.add_lines!(ax, [pointx(data, k) pointy(data, k); pointx(data, k + 1) pointy(data, k + 1)], c, Float64(linewidth))
+    end
+    return ax
+end
+"Upstream's `hidedecorations!(ax)`: no ticks, tick labels, grid or axis labels; the frame and the title stay."
+hidedecorations!(ax::Ax) = (PlotCore.hidedecorations!(ax); ax)
+"Upstream's `limits!(ax, xmin, xmax, ymin, ymax)`; `nothing` leaves a side to the data."
+limits!(ax::Ax, x1, x2, y1, y2) = (PlotCore.setlimits!(ax, _lim(x1), _lim(x2), _lim(y1), _lim(y2)); ax)
+limits!(ax::Ax, xs::Tuple, ys::Tuple) = limits!(ax, xs..., ys...)
+_lim(::Nothing) = NaN
+_lim(x::Real) = Float64(x)
 "Add a plot of a user's recipe to the axis and return it."
 plot!(ax::Ax, p) = (PlotCore.add_plot!(ax, p); p)
+"Upstream's `text` and `linesegments`, by name: an old recipe's `Plot{typeof(text)}`; the user API has `text!` and `linesegments!`."
+function text end
+function linesegments end
 
 # --- live data -------------------------------------------------------------------------------------
 
@@ -243,13 +289,20 @@ The old Makie recipe API's names and types, owned by the umbrella (the lean-core
 the empty generic functions an old recipe extends or calls. Their machinery is MakieCompat's, a joint owner.
 """
 module OldAPI
-"Upstream's `Plot{F, T}`: the plotting function's type `F`, the converted arguments' types `T`, the arguments as given."
+# the plotting functions are the user API's (one function per name, as upstream's): an old recipe's `lines!(plot, …)` and a
+# user's `lines!(ax, …)` are methods of the same function
+import ..TraitMakie: lines!, lines, scatter!, scatter, text!, text, linesegments!, linesegments
+"""
+Upstream's `Plot{F, T}`: the plotting function's type `F`, the converted arguments' types `T`, the arguments as given;
+its parent (the plot whose recipe made it, or the place a top-level plot was added to, as the layer represents it).
+"""
 mutable struct Plot{F, T}
     converted::T
     args::Vector{Any}
     attributes::Dict{Symbol, Any}
     graph::Dict{Symbol, Any}
     children::Vector{Any}
+    parent::Any
 end
 """
 Upstream's `Attributes`: names to values. A value may be a node of a plot or an `Observable`. Read as
@@ -275,9 +328,6 @@ function documented_attributes end
 function conversion_trait end
 "A recipe's attributes that another plot type also has."
 function shared_attributes end
-"A line child of an old-style plot."
-function lines! end
-function lines end
 "A recipe's conversion of its arguments, by plot type (upstream's cascade, the cases a recipe defines)."
 function convert_arguments end
 "A mesh child of an old-style plot."

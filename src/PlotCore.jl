@@ -3,7 +3,8 @@
 #   - `Positions`: what a plot reads from data. A user type that holds such data in a field
 #     forwards to it and runs the library's compiled code;
 #   - `Sample`: what a histogram reads from data: values by index;
-#   - `ColorSpec`: a colour, or one per point;
+#   - `ColorSpec`: a colour, or one per point (`MappedColors`: numbers through a colormap);
+#   - `Colormap`: a colour for each value in [0, 1] (`:viridis`, `:balance`, a vector of stops, a user's);
 #   - `MarkerShape`: a marker's outline, one shape or one per point;
 #   - `Scale`: an axis's scale (`identity`, `log10`), with its ticks and their labels;
 #   - `Plot`: a recipe. Primitives (`Lines`, `Scatter`, `Bars`, `VLines`, `Poly`, `Labels`) draw;
@@ -18,10 +19,11 @@
 using TraitWorld
 using Cairo: Cairo
 export Positions, npoints, pointx, pointy, Sample, nvalues, value, ColorSpec, rgba, MarkerShape, outline,
+       Colormap, cmapcolor, MappedColors, COLORMAPS,
        Scale, scaled, scaleticks, ticklabel, Plot, draw!, datalimits, setcolor!,
        Figure, Axis, Lines, Scatter, Bars, VLines, Poly, Labels, Stairs, Hist, Band, Canvas, Transform2D,
        add_axis!, add_lines!, add_scatter!, add_bars!, add_vlines!, add_poly!, add_labels!, add_stairs!, add_hist!, add_band!,
-       add_plot!, render_png, newfigure, recolor!, nextcolor!, NAMED, MARKERS, PALETTE
+       add_plot!, render_png, newfigure, recolor!, nextcolor!, hidedecorations!, setlimits!, NAMED, MARKERS, PALETTE
 
 # --- the traits --------------------------------------------------------------------------------
 
@@ -40,6 +42,13 @@ end
     npoints(p) = length(p)
     pointx(p, i) = p[i][1]
     pointy(p, i) = p[i][2]
+end
+# a vector of points that are vectors themselves: GeometryBasics' `Point2f` (a `StaticVector`, an `AbstractVector`),
+# `[x, y]` pairs. No dependency on the points' package: the family is bounded by Base's abstract types
+@implement Positions V where {V <: AbstractVector{<:AbstractVector{<:Real}}} begin
+    npoints(p) = length(p)
+    pointx(p, i) = Float64(p[i][1])
+    pointy(p, i) = Float64(p[i][2])
 end
 
 "Values a histogram bins, by index."
@@ -83,6 +92,53 @@ end
 end
 @implement ColorSpec Vector{ColorName} begin
     rgba(c, i) = NAMED[c[i].name]
+end
+
+"A colormap: a colour for each value `t` in [0, 1]."
+@trait Colormap begin
+    cmapcolor(m::Colormap, t::Float64)::NTuple{4,Float64}
+end
+include("colormaps.jl")
+"The colour at `t` in [0, 1] of colour stops spaced evenly, interpolated linearly between neighbours (as Makie's `interpolated_getindex`)."
+function interpolated(stops::Vector{NTuple{4,Float64}}, t::Float64)
+    isempty(stops) && return (0.0, 0.0, 0.0, 0.0)
+    x = clamp(t, 0.0, 1.0) * (length(stops) - 1) + 1
+    lo, hi = floor(Int, x), ceil(Int, x)
+    lo == hi && return stops[lo]
+    w = x - lo
+    a, b = stops[lo], stops[hi]
+    return (a[1] * (1 - w) + b[1] * w, a[2] * (1 - w) + b[2] * w, a[3] * (1 - w) + b[3] * w, a[4] * (1 - w) + b[4] * w)
+end
+"A named colormap, checked when it is made, as a `ColorName` is."
+struct ColormapName
+    name::Symbol
+    function ColormapName(m::Symbol)
+        haskey(COLORMAPS, m) || throw(ArgumentError("unknown colormap :$m. The colormaps are $(_names(COLORMAPS)), a vector of colours (stops spaced evenly), or a value of a type conforming to Colormap"))
+        return new(m)
+    end
+end
+@implement Colormap ColormapName begin
+    cmapcolor(m, t) = interpolated(COLORMAPS[m.name], t)
+end
+@implement Colormap Vector{NTuple{4,Float64}} begin
+    cmapcolor(m, t) = interpolated(m, t)
+end
+"""
+Colours by number: value `i` of `values` mapped through `colormap`, the range `lo` to `hi` onto [0, 1] (values outside
+take the colormap's ends; `NaN` is transparent). Its values and colormap are kept values: any conforming type, a live one too.
+"""
+struct MappedColors
+    values::Sample                  # Kept{Sample}
+    colormap::Colormap              # Kept{Colormap}
+    lo::Float64
+    hi::Float64
+end
+function mappedcolor(m::Opened{Colormap}, v::Float64, lo::Float64, hi::Float64)::NTuple{4,Float64}
+    isnan(v) && return (0.0, 0.0, 0.0, 0.0)
+    return cmapcolor(m, hi > lo ? (v - lo) / (hi - lo) : 0.5)
+end
+@implement ColorSpec MappedColors begin
+    rgba(c, i) = mappedcolor(c.colormap, value(c.values, i), c.lo, c.hi)
 end
 
 "A marker's outline for point `i`: a closed polygon around (0, 0) of radius about 1, in pixels' orientation (y down)."
@@ -235,6 +291,26 @@ function fillrect!(c::Canvas, x::Float64, y::Float64, w::Float64, h::Float64, co
     Cairo.fill(ctx)
     return nothing
 end
+"A line with a colour per point: each segment stroked alone, its colour going linearly from its start's to its end's."
+function gradientline!(c::Canvas, xs::Vector{Float64}, ys::Vector{Float64}, cols::Vector{NTuple{4,Float64}}, lw::Float64)
+    ctx = c.ctx
+    Cairo.set_line_width(ctx, lw)
+    for i in 1:length(xs)-1
+        a, b = cols[i], cols[i+1]
+        if a == b
+            Cairo.set_source_rgba(ctx, a[1], a[2], a[3], a[4])
+        else
+            pat = Cairo.pattern_create_linear(xs[i], ys[i], xs[i+1], ys[i+1])
+            Cairo.pattern_add_color_stop_rgba(pat, 0.0, a[1], a[2], a[3], a[4])
+            Cairo.pattern_add_color_stop_rgba(pat, 1.0, b[1], b[2], b[3], b[4])
+            Cairo.set_source(ctx, pat)
+        end
+        Cairo.move_to(ctx, xs[i], ys[i])
+        Cairo.line_to(ctx, xs[i+1], ys[i+1])
+        Cairo.stroke(ctx)
+    end
+    return nothing
+end
 writepng(c::Canvas, path::String) = (Cairo.write_to_png(c.surface, path); nothing)
 
 # --- plots: a recipe trait ----------------------------------------------------------------------
@@ -367,7 +443,12 @@ datalimits(p::Poly) = limits(p.pos)
 datalimits(p::Labels) = limits(p.pos)
 function draw!(p::Lines, c::Canvas, t::Transform2D)
     xs, ys = pixels(p.pos, t, t.xscale, t.yscale)
-    polyline!(c, xs, ys, rgba(p.color, 1), p.linewidth)
+    cols = colors(p.color, length(xs))
+    if length(cols) < 2 || all(==(cols[1]), cols)
+        polyline!(c, xs, ys, rgba(p.color, 1), p.linewidth)          # one colour: one stroke
+    else
+        gradientline!(c, xs, ys, cols, p.linewidth)                  # a colour per point: each segment from one to the next
+    end
     return nothing
 end
 function draw!(p::Scatter, c::Canvas, t::Transform2D)
@@ -520,7 +601,8 @@ setcolor!(b::Band, c::Kept{ColorSpec}) = (b.color = c; nothing)
 
 """
 An axis in a figure's grid cell (`row`, `col`): its plots, each kept with its attribute (a trait's name in a
-container: Vector{Kept{Plot}}), its scales (kept values: `identity`, `log10`, a user's), and its place in the palette.
+container: Vector{Kept{Plot}}), its scales (kept values: `identity`, `log10`, a user's), its place in the palette,
+whether it draws its decorations (ticks, their labels, the grid, the axis labels), and its limits (`NaN`: from the data).
 """
 mutable struct Axis
     plots::Vector{Plot}
@@ -532,7 +614,16 @@ mutable struct Axis
     row::Int
     col::Int
     cycled::Int                     # plots given the palette's colours so far
+    decorations::Bool
+    limits::NTuple{4,Float64}       # xmin, xmax, ymin, ymax in data coordinates; NaN where the data decide
 end
+const AUTOLIMITS = (NaN, NaN, NaN, NaN)
+Axis(plots, title, xlabel, ylabel, xscale, yscale, row, col, cycled) =
+    Axis(plots, title, xlabel, ylabel, xscale, yscale, row, col, cycled, true, AUTOLIMITS)
+"Hide the axis's decorations: ticks, their labels, the grid and the axis labels (the frame and the title stay)."
+hidedecorations!(ax::Axis) = (ax.decorations = false; nothing)
+"Fix the axis's limits in data coordinates; `NaN` leaves a side to the data."
+setlimits!(ax::Axis, xmin::Float64, xmax::Float64, ymin::Float64, ymax::Float64) = (ax.limits = (xmin, xmax, ymin, ymax); nothing)
 "A figure: its size in units (pixels at `px_per_unit = 1`) and its axes, laid out in a grid of equal cells."
 struct Figure
     width::Int
@@ -626,25 +717,35 @@ function drawaxis!(c::Canvas, ax::Axis, x0::Float64, y0::Float64, w::Float64, h:
     ymin, ymax = isfinite(ymin) && isfinite(ymax) ? (scaled(sy, ymin), scaled(sy, ymax)) : (0.0, 1.0)
     dx, dy = 0.05 * max(xmax - xmin, 1e-12), 0.05 * max(ymax - ymin, 1e-12)
     xmin -= dx; xmax += dx; ymin -= dy; ymax += dy
+    fx1, fx2, fy1, fy2 = ax.limits                     # fixed limits replace the data's, without the margin
+    isnan(fx1) || (xmin = scaled(sx, fx1)); isnan(fx2) || (xmax = scaled(sx, fx2))
+    isnan(fy1) || (ymin = scaled(sy, fy1)); isnan(fy2) || (ymax = scaled(sy, fy2))
     l, r, top, b = x0 + 60.0, x0 + w - 20.0, y0 + 40.0, y0 + h - 40.0     # the plot area
     t = Transform2D((r - l) / (xmax - xmin), l - (r - l) / (xmax - xmin) * xmin,
                     -(b - top) / (ymax - ymin), b + (b - top) / (ymax - ymin) * ymin, top, b, sx, sy)
     black, gray = (0.0, 0.0, 0.0, 1.0), (0.85, 0.85, 0.85, 1.0)
-    for v in scaleticks(sx, xmin, xmax, 6)
-        polyline!(c, [px(t, v), px(t, v)], [top, b], gray, 0.5)
-        text!(c, px(t, v), b + 16.0, ticklabel(sx, v), 11.0, :center, black)
-    end
-    for v in scaleticks(sy, ymin, ymax, 5)
-        polyline!(c, [l, r], [py(t, v), py(t, v)], gray, 0.5)
-        text!(c, l - 6.0, py(t, v) + 4.0, ticklabel(sy, v), 11.0, :right, black)
+    if ax.decorations
+        for v in scaleticks(sx, xmin, xmax, 6)
+            polyline!(c, [px(t, v), px(t, v)], [top, b], gray, 0.5)
+            text!(c, px(t, v), b + 16.0, ticklabel(sx, v), 11.0, :center, black)
+        end
+        for v in scaleticks(sy, ymin, ymax, 5)
+            polyline!(c, [l, r], [py(t, v), py(t, v)], gray, 0.5)
+            text!(c, l - 6.0, py(t, v) + 4.0, ticklabel(sy, v), 11.0, :right, black)
+        end
     end
     polyline!(c, [l, r, r, l, l], [top, top, b, b, top], black, 1.0)
     isempty(ax.title) || text!(c, (l + r) / 2, y0 + 24.0, ax.title, 14.0, :center, black)
-    isempty(ax.xlabel) || text!(c, (l + r) / 2, y0 + h - 8.0, ax.xlabel, 12.0, :center, black)
-    isempty(ax.ylabel) || vtext!(c, x0 + 14.0, (top + b) / 2, ax.ylabel, 12.0)
+    if ax.decorations
+        isempty(ax.xlabel) || text!(c, (l + r) / 2, y0 + h - 8.0, ax.xlabel, 12.0, :center, black)
+        isempty(ax.ylabel) || vtext!(c, x0 + 14.0, (top + b) / 2, ax.ylabel, 12.0)
+    end
+    clip = any(!isnan, ax.limits)                      # fixed limits: what lies outside the plot area is cut off
+    clip && (Cairo.save(c.ctx); Cairo.rectangle(c.ctx, l, top, r - l, b - top); Cairo.clip(c.ctx))
     for p in ax.plots
         draw!(p, c, t)                                 # one dispatch per plot; its loops run compiled per key
     end
+    clip && Cairo.restore(c.ctx)
     return nothing
 end
 
