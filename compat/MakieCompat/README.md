@@ -3,23 +3,26 @@
 The old Makie recipe API above TraitMakie's trait core: X3's slices 1–4, and the write-up of the Makie port's finish (the workload's path through the core, E-227, E-228; below) ([slice 1's plan](../../../writeup/plans/2026-10-28-x3-waist-slice1.md), E-219; [slice 4's](../../../writeup/plans/2026-10-29-x3-slice4.md), E-226). Upstream's `src/basic_recipes/stairs.jl` and `band.jl` from Makie 0.24.16 are in `src/upstream/`, byte for byte, and are included into the module.
 
 What the layer provides, plain code that uses the trait world (`src/MakieCompat.jl`):
-- `Plot{F, T}`, `@recipe`, `documented_attributes`, `conversion_trait`, `PointBased`, `plot!`, `Point2`;
-- a compute graph with ComputePipeline's author API (`map!(f, p, inputs, output)`, nodes read as `p.name`), recomputed when an input changed;
-- `lines!(p, attrs, node)` in an old `plot!`: a core `PlotCore.Lines` child, fed the node's value at each use;
+- `Plot{F, T}`, `@recipe` (the `begin` form, and the do-block form with a theme function and `default_theme`), `documented_attributes`, `conversion_trait`, `PointBased`, `plot!`; GeometryBasics' points and shapes (`Point2f`, `Circle`, …), as upstream re-exports them;
+- a compute graph with ComputePipeline's author API on `p.attributes` or the plot (`map!` with one or several outputs, `add_input!`, `add_constant!`, nodes read as `p.name` or `p[:name]`), recomputed when an input changed; a plot's parent, and `parent_scene`/`project` from the axis's last render;
+- leaves in an old `plot!` (`lines!`, `scatter!`, `linesegments!`, `text!`, `mesh!`): core primitives, fed the nodes' values at each use; numbers as colours go through the leaf's `colormap` and `colorrange`;
+- `name(args...)` returns the figure, its axis and the plot (`fig, ax, p = graphplot(g)`);
+- the names a recipe package reads from `using Makie`: the old API's, and upstream's user API re-exported from the umbrella (`Figure`, `Axis`, `lines!`, `scatter!`, `hidedecorations!`, `limits!`, `save`), Observables' `Observable`, `on`, `lift`; `Makie` names this module, so a package's `Makie.plot!` reads it. GraphMakie 0.6.6 runs with only its imports changed (`ndport/pkgs/GraphMakie-ports`, branch `ports`);
+- an `Observable` in the user API (`lines!(ax, obs)`, a colour): mirrored into the core's `Live`;
 - the hand-over: `Plot{F, T}` implements TraitMakie's `Plot` trait as a family, so an axis keeps old plots beside the core's;
 - a precompile workload, as an old recipe package would have one.
 
-The old API's names and types are the umbrella's (`TraitMakie.OldAPI`: `Plot{F, T}`, `plot!`, `documented_attributes`, `conversion_trait`, `shared_attributes`, `lines!`, `lines`); TraitMakie declares this layer a joint owner (`@joint_owners MakieCompat`), so its methods on them are owned (slice 2, E-222). The control, the same layer over PlainPlots, is `../../baselines/MakieCompatPlain/`.
+The old API's names and types are the umbrella's (`TraitMakie.OldAPI`: `Plot{F, T}`, `plot!`, `documented_attributes`, `conversion_trait`, `shared_attributes`; the plotting functions `lines!`, `scatter!`, `text!`, `linesegments!` are the user API's own, one function per name); TraitMakie declares this layer a joint owner (`@joint_owners MakieCompat`), so its methods on them are owned (slice 2, E-222). The control, the same layer over PlainPlots, is `../../baselines/MakieCompatPlain/`.
 
 `band.jl` (slice 3, E-223) brought the conversion cascade (a recipe's own `convert_arguments` before its conversion trait), named arguments, `@inherit` from a theme, a mesh leaf (triangles drawn as core polygons) and keyword attributes on leaves. Its PNG is close to TraitMakie's own band's: 6.6% of the pixels differ, by at most 8 of 255 in a channel (the mesh's triangles against one polygon: antialiased seams inside the fill; `experiments/x3/logs/pngdiff-fixed-slice5.log`). E-223's "pixels equal" came from `tools/pngdiff.jl` reading blank images; the tool is fixed (2026-10-29).
 
 Slice 4 (E-226) brought recipe children, `Attributes` and `Observable`:
 - **A recipe with a recipe child:** upstream's `src/stats/hist.jl`, unchanged, in a group of its own, `../MakieCompatStats/` (with StatsBase, which loads only with it). `stephist`'s `plot!` calls `stairs!(plot, Attributes(plot), plot.points; …)`: the tree is `stephist` → `stairs` → a core `Lines`. The umbrella names the group a second joint owner.
-- **`Attributes`** (upstream's type, the umbrella's): `Attributes(p)` and `p.attributes` hold references to the plot's attributes, so a child given them follows the parent's changes. A child takes each attribute from the keywords, else from the given `Attributes`, else its default.
+- **`Attributes`** (upstream's type, the umbrella's): `Attributes(p)` holds references to the plot's attributes (`p.attributes`, the compute graph, gives a child its attributes and nodes by reference too), so a child given them follows the parent's changes. A child takes each attribute from the keywords, else from the given `Attributes`, else its default.
 - **`Observable`** (Observables.jl's, re-exported by the layer) as an argument or an attribute: read at each use; when it notifies, a plain listener marks the plot's nodes stale (an array changed in place and notified is followed).
 - Arguments are kept as given and converted again when their value changes; `p.name[]`, `p.name[] = v`, `p[k][] = v`; the cascade ends in the conversion trait (`convert_arguments(P, args...)`), which `hist.jl`'s conversion of a `StatsBase.Histogram` for `stairs` uses.
 
-Not yet: `hist` (it calls `barplot!`; `barplot.jl` is not included); `on` and `lift` of a plot's attribute; `used_attributes`; `SpecApi`; the PlainPlots control for slice 4.
+Not yet: `hist` (it calls `barplot!`; `barplot.jl` is not included); `used_attributes`; `SpecApi`; the PlainPlots control for slice 4; markers other than the core's named ones (glyphs, polygons) and their rotation; dashed lines; text bounding boxes; a leaf's text offset and vertical alignment.
 
 ## How to run
 
@@ -98,3 +101,14 @@ E-168, for comparison: matplotlib's first plot 0.51 s; stock CairoMakie's 1.51 s
 - **Without the workload** the first plot compiles the core's path (1.1 s); the workload's upstream calls (two axes, a log axis) bring it to 0.16 s.
 - A scale of no conforming type is refused at the bound: `Axis(fig[1, 1]; xscale = sqrt)` raises "Argument 4 of `add_axis!` is bounded by Scale; a value of type typeof(sqrt) conforms to none of them … Scale is implemented by typeof(identity), typeof(log10)".
 
+### R2 (2026-10-29): a third-party recipe package, GraphMakie (E-240)
+
+TraitMakie b68d97a, julia-1.13 bfca89decc, TraitWorld ca92f22; product setting, strict mode off. Not a measurement. The census's items 3–10 (`../../../writeup/plans/2026-10-29-ndport-r1-census.md`).
+
+| | result |
+|---|---|
+| GraphMakie 0.6.6 on the layer | loads with its imports changed only (6 lines); R1's stand-ins gone |
+| the workload's step f and g graph plots against setting M (upstream GraphMakie, CairoMakie) | the 13 digest lines equal: node positions, edge line data, node and edge colours (RGBA × 255), step g's colours at each saved frame, its line and listeners (`../../../ndport/logs/r2-makie/`) |
+| GraphMakie's other features (`leaves-probe-1.log`) | node and edge labels, per-edge widths, named markers, a layout as points, attributes changed after the plot, curved edges draw; inner labels, directed graphs' arrows and dashed edges do not (listed under "Not yet") |
+| X3's checks of slices 1–5, the plotting session | 51 PNGs byte-equal to the run before (`../../../experiments/x3/logs/check-r2-regression.log`) |
+| after a late `using DataFrames`, the old-API leaves' path (`check_r2_lateload.jl`) | nothing recompiled (0 CodeInstances; `logs/lateload-r2.log`) |
