@@ -110,6 +110,12 @@ TraitMakie b68d97a, julia-1.13 bfca89decc, TraitWorld ca92f22. The census of R1 
 - X3's checks of slices 1–5 and the plotting session: 51 PNGs byte-equal to a run before the change (`../experiments/x3/logs/check-r2-regression.log`).
 - GraphMakie's step f and g plots on the ports: colours as handed to the core equal CairoMakie's (`numbers_to_colors`) to 1/255 (`../ndport/README.md`, E-240).
 
+## 2026-10-29: the REPL session's recipe step
+
+TraitMakie 1af318c, julia-1.13 00dcc9994c, TraitWorld 33dd55e (`../experiments/checks/logs/lollipop/`).
+- `scripts/session.sh`: 10 of 10 checks ok; one error at the prompt, the one marked `# ERROR expected` (`:magenta`).
+- From 04ce30f to c0d5c36 the session's `Lollipop` defined `setcolor!` at `Dynamic{ColorSpec}`, while the `Plot` trait declares `Kept{ColorSpec}`. `@implement Plot Lollipop` was refused, rightly, and three checks never printed; the script passed on its last check. It now passes only when every `_ok` call prints ok and only the marked errors show (`makie-session-before-fix.log` shows the old session failing it).
+
 ## What TraitWorld should provide
 
 Found while building step 2; TraitMakie works around it without touching the machinery.
