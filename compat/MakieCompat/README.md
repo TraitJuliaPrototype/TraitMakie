@@ -1,6 +1,6 @@
 # MakieCompat
 
-The old Makie recipe API above TraitMakie's trait core: X3's slices 1–4 ([slice 1's plan](../../../writeup/plans/2026-10-28-x3-waist-slice1.md), E-219; [slice 4's](../../../writeup/plans/2026-10-29-x3-slice4.md), E-226). Upstream's `src/basic_recipes/stairs.jl` and `band.jl` from Makie 0.24.16 are in `src/upstream/`, byte for byte, and are included into the module.
+The old Makie recipe API above TraitMakie's trait core: X3's slices 1–4, and the write-up of the Makie port's finish (the workload's path through the core, E-227, E-228; below) ([slice 1's plan](../../../writeup/plans/2026-10-28-x3-waist-slice1.md), E-219; [slice 4's](../../../writeup/plans/2026-10-29-x3-slice4.md), E-226). Upstream's `src/basic_recipes/stairs.jl` and `band.jl` from Makie 0.24.16 are in `src/upstream/`, byte for byte, and are included into the module.
 
 What the layer provides, plain code that uses the trait world (`src/MakieCompat.jl`):
 - `Plot{F, T}`, `@recipe`, `documented_attributes`, `conversion_trait`, `PointBased`, `plot!`, `Point2`;
@@ -11,7 +11,7 @@ What the layer provides, plain code that uses the trait world (`src/MakieCompat.
 
 The old API's names and types are the umbrella's (`TraitMakie.OldAPI`: `Plot{F, T}`, `plot!`, `documented_attributes`, `conversion_trait`, `shared_attributes`, `lines!`, `lines`); TraitMakie declares this layer a joint owner (`@joint_owners MakieCompat`), so its methods on them are owned (slice 2, E-222). The control, the same layer over PlainPlots, is `../../baselines/MakieCompatPlain/`.
 
-`band.jl` (slice 3, E-223) brought the conversion cascade (a recipe's own `convert_arguments` before its conversion trait), named arguments, `@inherit` from a theme, a mesh leaf (triangles drawn as core polygons) and keyword attributes on leaves. Its pixels equal TraitMakie's own band's.
+`band.jl` (slice 3, E-223) brought the conversion cascade (a recipe's own `convert_arguments` before its conversion trait), named arguments, `@inherit` from a theme, a mesh leaf (triangles drawn as core polygons) and keyword attributes on leaves. Its PNG is close to TraitMakie's own band's: 6.6% of the pixels differ, by at most 8 of 255 in a channel (the mesh's triangles against one polygon: antialiased seams inside the fill; `experiments/x3/logs/pngdiff-fixed-slice5.log`). E-223's "pixels equal" came from `tools/pngdiff.jl` reading blank images; the tool is fixed (2026-10-29).
 
 Slice 4 (E-226) brought recipe children, `Attributes` and `Observable`:
 - **A recipe with a recipe child:** upstream's `src/stats/hist.jl`, unchanged, in a group of its own, `../MakieCompatStats/` (with StatsBase, which loads only with it). `stephist`'s `plot!` calls `stairs!(plot, Attributes(plot), plot.points; …)`: the tree is `stephist` → `stairs` → a core `Lines`. The umbrella names the group a second joint owner.
@@ -29,6 +29,8 @@ julia --project=experiments/x3/env experiments/x3/costs.jl <core|old|plain|plain
 julia --project=experiments/x3/env experiments/x3/check4.jl <out dir>       # slice 4: stephist, Attributes, Observables
 julia --project=experiments/x3/env experiments/x3/census.jl                 # the layer's and the group's methods by ownership
 bash experiments/x3/costs4.sh                                               # slice 4's costs; env-nowl has the workloads off
+julia --project=experiments/x3/env experiments/x3/check5.jl <out dir>       # the finish: the workload's plotting calls over the core
+bash experiments/x3/costs5.sh                                               # its costs and the plotting session against matplotlib; env-nowl5: TraitMakie's workload off
 ```
 
 ## Results (2026-10-28)
@@ -70,3 +72,29 @@ julia-1.13 a4e9ad5da9, TraitWorld c39fedc; fresh processes, 2 runs each, stock i
 - The load of `stephist` includes StatsBase's tree (SparseArrays among it): 0.28 s over the layer's.
 - The old `stairs`' first PNG with the workload (95–97 ms) compiles the keyword call for `step` alone; the workload calls it with `step` and `color`.
 - After the late load, `stephist` recompiles: its child's arguments are nodes of the parent's untyped graph, so the creation infers over `Any` and compiles abstract instances (among them `hist.jl`'s `convert_arguments(::Type{Stairs}, ::Histogram)`), which DataFrames' `AbstractVector` subtypes invalidate.
+
+### The finish (2026-10-29): the workload's path through the core
+
+[The plan](../../../writeup/plans/2026-10-29-makie-finish.md) (E-227, E-228). E-168's plotting calls (`experiments/ttfx/plotting.jl`: `Figure(size = …)`, `fig[r, c]`, `Axis(fig[2, 1]; xscale = log10)`, `lines!(ax, x, y)`, `save(path, fig; px_per_unit = 1)`) run unchanged after `using TraitMakie`. The umbrella maps them to the core: axes in a grid, a `Scale` trait (`identity`, `log10`) kept in each axis, ticks and labels as the scale's operations, Makie's palette cycled per axis. No old-API machinery is on this path. The solutions are the workload's (setting S, saved once in `experiments/x3/data/`).
+
+julia-1.13 bfca89decc, TraitWorld c39fedc, TraitMakie 983f6e1; fresh processes, 2 runs each after a warm-up, stock image (`experiments/x3/costs5.sh`, `logs/costs-slice5.log`). Without the workload: PrecompileTools' `precompile_workload = false` for TraitMakie (`experiments/x3/env-nowl5`).
+
+| | load | first `plot_two` | `plot_one` | `plot_two` again | after a late `using DataFrames`: `plot_two` |
+|---|---|---|---|---|---|
+| upstream's calls over TraitMakie | 0.34 s | 158–163 ms | 35 ms | 20–21 ms | 20–26 ms, nothing recompiled |
+| the same, without TraitMakie's workload | 0.30–0.32 s | 1,135–1,137 ms | 34–35 ms | 20 ms | 20 ms, nothing recompiled |
+
+**The plotting part of a session** (E-228; `session5.jl`, `session5.py`, the same solutions; seconds from before the process starts; the read of the solutions, 0.09 s in Julia, left out):
+
+| | startup | load | first plot (`plot_two`) | second (`plot_one`) | again (`plot_two`) | **session** |
+|---|---|---|---|---|---|---|
+| TraitMakie, upstream's calls | 0.12 | 0.35–0.36 | 0.156–0.158 | 0.035–0.036 | 0.020 | **0.68–0.69** |
+| matplotlib 3.11.2 | 0.01 | 0.33 | 0.530–0.532 | 0.036 | 0.076–0.080 | **0.98–0.99** |
+
+E-168, for comparison: matplotlib's first plot 0.51 s; stock CairoMakie's 1.51 s (load 3.5 s with SciML); TraitMakie's own API in setting D 0.15 s.
+
+- **Checks** (`logs/check-slice5.log`): each PNG of `plotting.jl` equals, byte for byte, the same figure drawn through the core's own functions (`add_axis!`, `add_lines!`, `render_png`). Against upstream CairoMakie's PNGs of E-168: the same sizes (800×600, 800×400), the same axes, curves and colours in the same order, ticks at powers of ten on the log axis (`10⁻⁴` to `10⁴` in steps of two; Makie's in steps of three); 15.7% and 10.1% of the pixels differ (fonts, margins, tick choice), not a criterion. TraitMakie's suite passes with its reference images unchanged (`logs/traitmakie-suite-slice5.log`); slices 1–4's checks pass (`logs/check-slice5-regression.log`).
+- **What the first plot compiles** (`firstplot5.jl`, `logs/firstplot-slice5.log`): 154 CodeInstances, 143 of them Base's broadcasting and the session's `plot_two` (the user's own `getindex.(a.u, k)`), 6 TraitWorld's entry of a scale at `add_axis!`'s bound; none of the core's.
+- **Without the workload** the first plot compiles the core's path (1.1 s); the workload's upstream calls (two axes, a log axis) bring it to 0.16 s.
+- A scale of no conforming type is refused at the bound: `Axis(fig[1, 1]; xscale = sqrt)` raises "Argument 4 of `add_axis!` is bounded by Scale; a value of type typeof(sqrt) conforms to none of them … Scale is implemented by typeof(identity), typeof(log10)".
+
