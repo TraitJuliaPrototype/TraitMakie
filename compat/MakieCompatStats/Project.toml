@@ -1,0 +1,14 @@
+name = "MakieCompatStats"
+uuid = "c40f233c-c9ef-4d74-b975-81fa36f88778"
+version = "0.0.1"
+
+[deps]
+MakieCompat = "5b0f4c2e-8a51-4d3e-9c77-2f6a1e0b8d43"
+StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
+TraitMakie = "46a11cac-d2c9-498a-a901-1fb9b8611426"
+TraitWorld = "7a3c1e52-9b4d-4f6e-8a21-5d0c3b9e7f14"
+
+[sources]
+MakieCompat = {path = "../MakieCompat"}
+TraitMakie = {path = "../.."}
+TraitWorld = {path = "../../../TraitWorld"}

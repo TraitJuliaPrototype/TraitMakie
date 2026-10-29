@@ -14,8 +14,9 @@ Cairo directly (wrapping by facts).
 module TraitMakie
 using TraitWorld
 # the old recipe API's machinery lives in MakieCompat, which defines methods on the names below (X3, slice 2;
-# the lean-core memo §1.2): the umbrella that owns the names declares it a joint owner (traits §10.1)
-@joint_owners MakieCompat
+# the lean-core memo §1.2), and its statistics recipes in MakieCompatStats, a group with StatsBase (slice 4): the
+# umbrella that owns the names declares both joint owners (traits §10.1)
+@joint_owners MakieCompat MakieCompatStats
 
 include("PlotCore.jl")
 using .PlotCore
@@ -200,13 +201,32 @@ The old Makie recipe API's names and types, owned by the umbrella (the lean-core
 the empty generic functions an old recipe extends or calls. Their machinery is MakieCompat's, a joint owner.
 """
 module OldAPI
-"Upstream's `Plot{F, T}`: the plotting function's type `F`, the converted arguments' types `T`."
+# Observables.jl's `Observable`, the ecosystem's type: a user's value that changes, as an argument or an attribute
+using Observables: Observable
+"Upstream's `Plot{F, T}`: the plotting function's type `F`, the converted arguments' types `T`, the arguments as given."
 mutable struct Plot{F, T}
     converted::T
+    args::Vector{Any}
     attributes::Dict{Symbol, Any}
     graph::Dict{Symbol, Any}
     children::Vector{Any}
 end
+"""
+Upstream's `Attributes`: names to values. A value may be a node of a plot or an `Observable`. Read as
+`a[:color]` or `a.color`; splatted as keywords (`stephist!(fig, x; a...)`).
+"""
+struct Attributes
+    attributes::Dict{Symbol, Any}
+end
+Attributes(; kw...) = Attributes(Dict{Symbol, Any}(kw))
+Attributes(ps::Pair{Symbol}...) = Attributes(Dict{Symbol, Any}(ps...))
+Base.getindex(a::Attributes, k::Symbol) = getfield(a, :attributes)[k]
+Base.setindex!(a::Attributes, v, k::Symbol) = (getfield(a, :attributes)[k] = v; a)
+Base.getproperty(a::Attributes, k::Symbol) = k === :attributes ? getfield(a, :attributes) : a[k]
+Base.haskey(a::Attributes, k::Symbol) = haskey(getfield(a, :attributes), k)
+Base.keys(a::Attributes) = keys(getfield(a, :attributes))
+Base.length(a::Attributes) = length(getfield(a, :attributes))
+Base.iterate(a::Attributes, s...) = iterate(getfield(a, :attributes), s...)
 "The recipe author's `plot!`, one method per recipe."
 function plot! end
 "A recipe's attribute defaults, as name => value pairs."
@@ -223,6 +243,9 @@ function convert_arguments end
 "A mesh child of an old-style plot."
 function mesh! end
 function mesh end
+"Primitives an old recipe's file names (`hist.jl`'s plot types), without machinery here."
+function heatmap end
+function voxels end
 end
 
 end
