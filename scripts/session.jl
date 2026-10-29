@@ -21,7 +21,7 @@ p.color = [(i / 50, 0.2, 0.5, 1.0) for i in 1:50]
 p.markersize = 9
 save(png("2"), f); _ok("changed attributes", filesize(png("2")) > 1000 && p.markersize === 9.0)
 # a mistake teaches: the message lists the named colours
-p.color = :magenta
+p.color = :magenta   # ERROR expected
 _ok("a refused colour keeps the old one", TraitMakie.rgba(p.color, 50) == (1.0, 0.2, 0.5, 1.0))
 # a new colour type
 struct Fade; n::Int; end
@@ -37,7 +37,7 @@ function TraitMakie.datalimits(l::Lollipop)
     return (min(a[1], b[1]), max(a[2], b[2]), min(a[3], b[3]), max(a[4], b[4]))
 end
 TraitMakie.PlotCore.draw!(l::Lollipop, c::TraitMakie.PlotCore.Canvas, t::TraitMakie.PlotCore.Transform2D) = (TraitMakie.PlotCore.draw!(l.stems, c, t); TraitMakie.PlotCore.draw!(l.tips, c, t))
-TraitMakie.PlotCore.setcolor!(l::Lollipop, c::Dynamic{ColorSpec}) = (l.tips.color = c; nothing)
+TraitMakie.PlotCore.setcolor!(l::Lollipop, c::Kept{ColorSpec}) = (l.tips.color = c; nothing)
 @implement Plot Lollipop
 g = figure(; title = "lollipops")
 lp = plot!(g, Lollipop([1.0, 2.0, 3.0], [2.0, -1.0, 3.0]))
