@@ -5,7 +5,6 @@ authors = ["Frank Hellmann"]
 
 [deps]
 Cairo = "159f3aea-2a34-519c-b102-8c37f9878175"
-Observables = "510215fc-4207-5dde-b226-833fc4488ee2"
 TraitWorld = "7a3c1e52-9b4d-4f6e-8a21-5d0c3b9e7f14"
 
 [sources]
@@ -14,7 +13,6 @@ TraitWorld = {path = "../TraitWorld"}
 
 [compat]
 Cairo = "1.1.1"
-Observables = "0.5.5"
 julia = "1.13"
 
 [extras]

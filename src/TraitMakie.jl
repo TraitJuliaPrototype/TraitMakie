@@ -201,8 +201,6 @@ The old Makie recipe API's names and types, owned by the umbrella (the lean-core
 the empty generic functions an old recipe extends or calls. Their machinery is MakieCompat's, a joint owner.
 """
 module OldAPI
-# Observables.jl's `Observable`, the ecosystem's type: a user's value that changes, as an argument or an attribute
-using Observables: Observable
 "Upstream's `Plot{F, T}`: the plotting function's type `F`, the converted arguments' types `T`, the arguments as given."
 mutable struct Plot{F, T}
     converted::T

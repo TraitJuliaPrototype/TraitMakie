@@ -22,8 +22,10 @@ const PC = TraitMakie.PlotCore
 # the old API's names are the umbrella's (TraitMakie.OldAPI); this package, a joint owner, gives them their
 # machinery (X3, slice 2)
 import TraitMakie.OldAPI: Plot, plot!, documented_attributes, conversion_trait, shared_attributes, lines!, lines,
-                          convert_arguments, mesh!, mesh, Attributes, Observable, heatmap, voxels
-using Observables: on
+                          convert_arguments, mesh!, mesh, Attributes, heatmap, voxels
+# Observables.jl's `Observable`, the ecosystem's type, re-exported: a user's value that changes, as an argument or an
+# attribute (here, not in the umbrella, so that the umbrella's environments need no new dependency)
+using Observables: Observable, on
 export stairs, stairs!, Stairs, band, band!, Band, Point2, Point2f, Point2d, Attributes, Observable
 "`band.jl` extends `Makie.plot!`: the old API's module, here this one."
 const Makie = @__MODULE__

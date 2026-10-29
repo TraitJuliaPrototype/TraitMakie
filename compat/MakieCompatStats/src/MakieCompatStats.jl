@@ -11,8 +11,8 @@ module MakieCompatStats
 using TraitWorld
 import TraitMakie
 import StatsBase
-import TraitMakie.OldAPI: Plot, plot!, documented_attributes, convert_arguments, Attributes, Observable
-import MakieCompat: @recipe, @inherit, argnames, Point2, Point2d, automatic, extrema_nan, AbstractPlot, BarPlot, Heatmap,
+import TraitMakie.OldAPI: Plot, plot!, documented_attributes, convert_arguments, Attributes
+import MakieCompat: Observable, @recipe, @inherit, argnames, Point2, Point2d, automatic, extrema_nan, AbstractPlot, BarPlot, Heatmap,
                     Voxels, Stairs, stairs!, barplot!
 export stephist, stephist!, StepHist, hist, hist!, Hist
 
