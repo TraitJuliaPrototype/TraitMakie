@@ -6,7 +6,7 @@
 #     scripts/session.sh            # JULIA=<julia binary>, LOCK=<lock file> to override
 set -u
 cd "$(dirname "$0")/.."
-ROOT=/home/hellmann/Repos/julia-trait-bound
+ROOT=${TW_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}
 J=${JULIA:-$ROOT/julia-1.13/julia}
 LOCK=${LOCK:-/tmp/claude-1000/julia-review.lock}
 OUT=${TMPDIR:-/tmp}/traitmakie_session.out
