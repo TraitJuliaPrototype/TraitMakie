@@ -38,7 +38,7 @@ function TraitMakie.datalimits(r::Ribbon)
     return (min(a[1], b[1]), max(a[2], b[2]), min(a[3], b[3]), max(a[4], b[4]))
 end
 TraitMakie.PlotCore.draw!(r::Ribbon, c::PC.Canvas, t::PC.Transform2D) = (PC.draw!(r.band, c, t); PC.draw!(r.center, c, t))
-TraitMakie.PlotCore.setcolor!(r::Ribbon, c::Kept{ColorSpec}) = (r.center.color = c; nothing)
+TraitMakie.PlotCore.setcolor!(r::Ribbon, c::ColorSpec) = (r.center.color = c; nothing)
 @implement Plot Ribbon
 
 "The pixels of a PNG file (ARGB, one UInt32 each), as a width × height matrix."
@@ -121,7 +121,7 @@ end
     xs = collect(1.0:10.0)
     f = figure()
     p = scatter!(f, xs, xs)
-    @test p isa Scatter && p.color isa Kept{ColorSpec} && !getfield(p.color, :compiled)   # the library's default at its bound
+    @test p isa Scatter && p.color isa ColorSpec                                           # the colour kept as given
     for c in (:red, (0.1, 0.2, 0.3), (0.1, 0.2, 0.3, 0.5), [:red, :blue, :red, :blue, :red, :blue, :red, :blue, :red, :blue],
               [(0.0, 0.0, 0.0, 1.0) for _ in xs], Gradient((1.0, 0.0, 0.0, 1.0), (0.0, 0.0, 1.0, 1.0), 10))
         p.color = c                                      # each a different shape of colour
@@ -151,12 +151,12 @@ end
     e = try; p.marker = :hexagon; nothing; catch e; e; end
     @test e isa ArgumentError && occursin(":diamond", e.msg)
     @test isfile(save(png("refused"), f))               # the refused assignments left the plot as it was
-    @test !conforms(Symbol, ColorSpec) && !conforms(Symbol, MarkerShape)
+    @test !(Symbol <: ColorSpec) && !(Symbol <: MarkerShape)
     @test_throws ArgumentError scatter!(f, xs, xs; color = :magenta)
     @test_throws ArgumentError stairs!(f, xs, xs; step = :sideways)
     @test_throws ArgumentError hist!(f, xs; bins = 0)
     @test_throws DimensionMismatch lines!(f, xs, xs[1:3])
-    @test_throws TraitWorld.TraitBoundError (p.color = "red")    # a value of no conforming type: refused at the bound
+    @test_throws TypeError (p.color = "red")                 # a value of no member type: refused at the field
     s.step = :sideways                                   # a field without a bound is not checked when set,
     @test_throws ArgumentError save(png("bad"), f)       # but at the next render, naming the choices
 end

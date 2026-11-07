@@ -80,10 +80,9 @@ _sample(x) = x                                      # a user's type conforming t
 
 # --- attributes: a value assigned to a plot's field is translated at the field's bound -----------
 #
-# A recipe's attribute that may change shape is a field of a trait's name, `Kept{X}`. Julia's
-# `setproperty!` converts an assigned value to the field's type; TraitWorld's conversion keeps a value
-# that conforms with its trait's default and hands any other to the library's translation,
-# `convert(X, x)` (traits reference §7.3). So `p.color = :red`, `p.color = [(1, 0, 0, 1), …]`,
+# A recipe's attribute that may change shape is a field typed by a trait. Julia's `setproperty!`
+# converts an assigned value to the field's type: `convert(X, x)` is `x` for a member, and the
+# library translates any other (traits §8.1). So `p.color = :red`, `p.color = [(1, 0, 0, 1), …]`,
 # `p.marker = :rect`, `p.pos = (x, y)` work at the prompt, for the library's recipes and a user's alike.
 Base.convert(::Type{ColorSpec}, x) = _color(x)
 Base.convert(::Type{MarkerShape}, x) = _marker(x)
@@ -232,9 +231,11 @@ Base.show(io::IO, l::Live) = (print(io, "Live("); show(io, l.val); print(io, ")"
 @implement Sample Live{Vector{Float64}} by val
 @implement Sample Live{Vector{Int}} by val
 
-# a precompile workload: every recipe, the library's own colour and marker types on each, an
-# attribute changed after the plot was made, and live data, into a temporary file
-TraitWorld.@workload begin
+# a precompile workload, run while the package image is built: every recipe, the library's own colour
+# and marker types on each, an attribute changed after the plot was made, and live data, into a
+# temporary file
+if ccall(:jl_generating_output, Cint, ()) == 1
+    let
     xs = collect(range(0.0, 2pi; length = 50))
     path = tempname() * ".png"
     f = lines(xs, sin.(xs); title = "workload")
@@ -279,6 +280,7 @@ TraitWorld.@workload begin
     end
     save(path, fu; px_per_unit = 1)
     rm(path; force = true)
+    end
 end
 
 

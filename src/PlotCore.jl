@@ -1,5 +1,6 @@
 # PlotCore: the trait module. Data, colours, markers and plots are traits; plots are kept in an
-# axis as dynamic values; the drawing loops run in workers compiled per key (what the bounds see):
+# axis as `Dynamic{Plot}` values; the drawing loops are compiled per type of the data they read
+# (`@specialize` at their trait arguments):
 #   - `Positions`: what a plot reads from data. A user type that holds such data in a field
 #     forwards to it and runs the library's compiled code;
 #   - `Sample`: what a histogram reads from data: values by index;
@@ -13,11 +14,12 @@
 #     next render. A user's recipe conforms too.
 # A figure holds axes in a grid; each axis keeps its plots and its scales.
 # Cairo is called directly (wrapping by facts, writeup/explorations/wrapping-by-facts.md): the
-# trait world may call any Julia code; its compiled code depends on Cairo's methods only through
-# dispatch facts at concrete signatures.
-@trait_module module PlotCore
+# code compiled by facts may call any Julia code; it depends on Cairo's methods only through dispatch
+# facts at concrete signatures.
+module PlotCore
 using TraitWorld
 using Cairo: Cairo
+@trait_module
 export Positions, npoints, pointx, pointy, Sample, nvalues, value, ColorSpec, rgba, MarkerShape, outline,
        Colormap, cmapcolor, MappedColors, COLORMAPS,
        Scale, scaled, scaleticks, ticklabel, Plot, draw!, datalimits, setcolor!,
@@ -44,8 +46,9 @@ end
     pointy(p, i) = p[i][2]
 end
 # a vector of points that are vectors themselves: GeometryBasics' `Point2f` (a `StaticVector`, an `AbstractVector`),
-# `[x, y]` pairs. No dependency on the points' package: the family is bounded by Base's abstract types
-@implement Positions V where {V <: AbstractVector{<:AbstractVector{<:Real}}} begin
+# `[x, y]` pairs. No dependency on the points' package: a family of Base's abstract types, each a member with
+# every subtype (traits §5.8, §5.9)
+@implement Positions AbstractVector{P} where {P <: AbstractVector{<:Real}} begin
     npoints(p) = length(p)
     pointx(p, i) = Float64(p[i][1])
     pointy(p, i) = Float64(p[i][2])
@@ -56,7 +59,7 @@ end
     nvalues(s::Sample)::Int
     value(s::Sample, i::Int)::Float64
 end
-@implement Sample A where {A <: Vector{<:Real}} begin
+@implement Sample Vector{T} where {T <: Real} begin
     nvalues(s) = length(s)
     value(s, i) = Float64(s[i])
 end
@@ -128,12 +131,12 @@ Colours by number: value `i` of `values` mapped through `colormap`, the range `l
 take the colormap's ends; `NaN` is transparent). Its values and colormap are kept values: any conforming type, a live one too.
 """
 struct MappedColors
-    values::Sample                  # Kept{Sample}
-    colormap::Colormap              # Kept{Colormap}
+    values::Sample                  # any member, a live one too
+    colormap::Colormap
     lo::Float64
     hi::Float64
 end
-function mappedcolor(m::Opened{Colormap}, v::Float64, lo::Float64, hi::Float64)::NTuple{4,Float64}
+function mappedcolor(@specialize(m::Colormap), v::Float64, lo::Float64, hi::Float64)::NTuple{4,Float64}
     isnan(v) && return (0.0, 0.0, 0.0, 0.0)
     return cmapcolor(m, hi > lo ? (v - lo) / (hi - lo) : 0.5)
 end
@@ -227,7 +230,7 @@ struct Transform2D
     by::Float64
     top::Float64
     bottom::Float64
-    xscale::Scale                   # Kept{Scale}
+    xscale::Scale                   # any member: identity, log10, a user's
     yscale::Scale
 end
 @inline px(t::Transform2D, x::Float64) = t.ax * x + t.bx
@@ -319,12 +322,12 @@ writepng(c::Canvas, path::String) = (Cairo.write_to_png(c.surface, path); nothin
 @trait Plot begin
     datalimits(p::Plot)::NTuple{4,Float64}
     draw!(p::Plot, c::Canvas, t::Transform2D)::Nothing
-    setcolor!(p::Plot, c::Kept{ColorSpec})::Nothing
+    setcolor!(p::Plot, c::ColorSpec)::Nothing
 end
 
-# the loops over data: bounded functions; the plots hold their data as `Dynamic` fields, and each loop's bound
-# opens its data (`Opened`), so each loop runs compiled for the data's key
-function limits(pos::Opened{Positions})::NTuple{4,Float64}
+# the loops over data: fully bounded functions, compiled per type of the data at their `@specialize`
+# arguments; the plots hold their data in fields typed by the traits
+function limits(@specialize(pos::Positions))::NTuple{4,Float64}
     n = npoints(pos)
     xmin, xmax, ymin, ymax = Inf, -Inf, Inf, -Inf
     for i in 1:n
@@ -333,7 +336,7 @@ function limits(pos::Opened{Positions})::NTuple{4,Float64}
     end
     return (xmin, xmax, ymin, ymax)
 end
-function pixels(pos::Opened{Positions}, t::Transform2D, sx::Opened{Scale}, sy::Opened{Scale})::Tuple{Vector{Float64},Vector{Float64}}
+function pixels(@specialize(pos::Positions), t::Transform2D, @specialize(sx::Scale), @specialize(sy::Scale))::Tuple{Vector{Float64},Vector{Float64}}
     n = npoints(pos)
     xs = Vector{Float64}(undef, n)
     ys = Vector{Float64}(undef, n)
@@ -343,14 +346,20 @@ function pixels(pos::Opened{Positions}, t::Transform2D, sx::Opened{Scale}, sy::O
     end
     return xs, ys
 end
-colors(c::Opened{ColorSpec}, n::Int)::Vector{NTuple{4,Float64}} = NTuple{4,Float64}[rgba(c, i) for i in 1:n]
+function colors(@specialize(c::ColorSpec), n::Int)::Vector{NTuple{4,Float64}}
+    out = Vector{NTuple{4,Float64}}(undef, n)
+    for i in 1:n
+        out[i] = rgba(c, i)
+    end
+    return out
+end
 
 # --- primitives ---------------------------------------------------------------------------------
 
 "Lines through points. Its data and colour are kept as dynamic values: any conforming type."
 mutable struct Lines
-    pos::Positions                  # a trait's name in a field: Kept{Positions}, the value with its attribute
-    color::ColorSpec                # Kept{ColorSpec}
+    pos::Positions                  # a field typed by a trait: any member, or a Dynamic{Positions}
+    color::ColorSpec
     linewidth::Float64
 end
 "Markers at points: a shape (one, or one per point) and a colour (one, or one per point)."
@@ -358,7 +367,7 @@ mutable struct Scatter
     pos::Positions
     color::ColorSpec
     markersize::Float64
-    marker::MarkerShape             # Kept{MarkerShape}
+    marker::MarkerShape
 end
 "Bars from zero to each point's y, centred at its x."
 mutable struct Bars
@@ -387,7 +396,7 @@ mutable struct Labels
 end
 
 "Markers of shape `m`, radius `r` pixels, at the pixel points."
-function drawmarkers(m::Opened{MarkerShape}, c::Canvas, xs::Vector{Float64}, ys::Vector{Float64}, cols::Vector{NTuple{4,Float64}}, r::Float64)::Nothing
+function drawmarkers(@specialize(m::MarkerShape), c::Canvas, xs::Vector{Float64}, ys::Vector{Float64}, cols::Vector{NTuple{4,Float64}}, r::Float64)::Nothing
     ctx = c.ctx
     for i in eachindex(xs)
         o = outline(m, i)
@@ -403,11 +412,11 @@ function drawmarkers(m::Opened{MarkerShape}, c::Canvas, xs::Vector{Float64}, ys:
     end
     return nothing
 end
-function barlimits(pos::Opened{Positions}, w::Float64)::NTuple{4,Float64}
-    xmin, xmax, ymin, ymax = limits(pos)
+function barlimits(@specialize(pos::Positions), w::Float64)::NTuple{4,Float64}
+    xmin, xmax, ymin, ymax = limits(pos)::NTuple{4,Float64}     # a run-time site's result, asserted (open issue 157)
     return (xmin - w / 2, xmax + w / 2, min(ymin, 0.0), max(ymax, 0.0))
 end
-function drawbars(pos::Opened{Positions}, c::Canvas, t::Transform2D, sx::Opened{Scale}, sy::Opened{Scale}, col::Opened{ColorSpec}, w::Float64)::Nothing
+function drawbars(@specialize(pos::Positions), c::Canvas, t::Transform2D, @specialize(sx::Scale), @specialize(sy::Scale), @specialize(col::ColorSpec), w::Float64)::Nothing
     for i in 1:npoints(pos)
         x, y = pointx(pos, i), pointy(pos, i)
         x0, x1 = px(t, scaled(sx, x - w / 2)), px(t, scaled(sx, x + w / 2))
@@ -416,31 +425,32 @@ function drawbars(pos::Opened{Positions}, c::Canvas, t::Transform2D, sx::Opened{
     end
     return nothing
 end
-function vlimits(pos::Opened{Positions})::NTuple{4,Float64}
-    xmin, xmax, _, _ = limits(pos)
+function vlimits(@specialize(pos::Positions))::NTuple{4,Float64}
+    xmin, xmax, _, _ = limits(pos)::NTuple{4,Float64}           # a run-time site's result, asserted (open issue 157)
     return (xmin, xmax, Inf, -Inf)                  # no extent in y
 end
-function drawvlines(pos::Opened{Positions}, c::Canvas, t::Transform2D, sx::Opened{Scale}, col::Opened{ColorSpec}, lw::Float64)::Nothing
+function drawvlines(@specialize(pos::Positions), c::Canvas, t::Transform2D, @specialize(sx::Scale), @specialize(col::ColorSpec), lw::Float64)::Nothing
     for i in 1:npoints(pos)
         x = px(t, scaled(sx, pointx(pos, i)))
         polyline!(c, [x, x], [t.top, t.bottom], rgba(col, i), lw)
     end
     return nothing
 end
-function drawlabels(pos::Opened{Positions}, c::Canvas, t::Transform2D, sx::Opened{Scale}, sy::Opened{Scale}, texts::Vector{String}, col::Opened{ColorSpec}, size::Float64, align::Symbol)::Nothing
+function drawlabels(@specialize(pos::Positions), c::Canvas, t::Transform2D, @specialize(sx::Scale), @specialize(sy::Scale), texts::Vector{String}, @specialize(col::ColorSpec), size::Float64, align::Symbol)::Nothing
     for i in 1:min(npoints(pos), length(texts))
         text!(c, px(t, scaled(sx, pointx(pos, i))), py(t, scaled(sy, pointy(pos, i))), texts[i], size, align, rgba(col, i))
     end
     return nothing
 end
 
-# the kernels' bounds open the stored values (`Opened`): the worker selected by dispatch, per key; their results declared
-datalimits(p::Lines) = limits(p.pos)
-datalimits(p::Scatter) = limits(p.pos)
-datalimits(p::Bars) = barlimits(p.pos, p.width)
-datalimits(p::VLines) = vlimits(p.pos)
-datalimits(p::Poly) = limits(p.pos)
-datalimits(p::Labels) = limits(p.pos)
+# the kernels compile per type of the stored values (`@specialize`): one dispatch per call, then code per type
+# a kernel's result through the barrier at a field typed by a trait: asserted (open issue 157)
+datalimits(p::Lines) = limits(p.pos)::NTuple{4,Float64}
+datalimits(p::Scatter) = limits(p.pos)::NTuple{4,Float64}
+datalimits(p::Bars) = barlimits(p.pos, p.width)::NTuple{4,Float64}
+datalimits(p::VLines) = vlimits(p.pos)::NTuple{4,Float64}
+datalimits(p::Poly) = limits(p.pos)::NTuple{4,Float64}
+datalimits(p::Labels) = limits(p.pos)::NTuple{4,Float64}
 function draw!(p::Lines, c::Canvas, t::Transform2D)
     xs, ys = pixels(p.pos, t, t.xscale, t.yscale)
     cols = colors(p.color, length(xs))
@@ -456,20 +466,20 @@ function draw!(p::Scatter, c::Canvas, t::Transform2D)
     drawmarkers(p.marker, c, xs, ys, colors(p.color, length(xs)), p.markersize / 2)
     return nothing
 end
-draw!(p::Bars, c::Canvas, t::Transform2D) = drawbars(p.pos, c, t, t.xscale, t.yscale, p.color, p.width)
-draw!(p::VLines, c::Canvas, t::Transform2D) = drawvlines(p.pos, c, t, t.xscale, p.color, p.linewidth)
+draw!(p::Bars, c::Canvas, t::Transform2D) = (drawbars(p.pos, c, t, t.xscale, t.yscale, p.color, p.width); nothing)
+draw!(p::VLines, c::Canvas, t::Transform2D) = (drawvlines(p.pos, c, t, t.xscale, p.color, p.linewidth); nothing)
 function draw!(p::Poly, c::Canvas, t::Transform2D)
     xs, ys = pixels(p.pos, t, t.xscale, t.yscale)
     polygon!(c, xs, ys, rgba(p.color, 1))
     return nothing
 end
-draw!(p::Labels, c::Canvas, t::Transform2D) = drawlabels(p.pos, c, t, t.xscale, t.yscale, p.texts, p.color, p.fontsize, p.align)
-setcolor!(p::Lines, c::Kept{ColorSpec}) = (p.color = c; nothing)
-setcolor!(p::Scatter, c::Kept{ColorSpec}) = (p.color = c; nothing)
-setcolor!(p::Bars, c::Kept{ColorSpec}) = (p.color = c; nothing)
-setcolor!(p::VLines, c::Kept{ColorSpec}) = (p.color = c; nothing)
-setcolor!(p::Poly, c::Kept{ColorSpec}) = (p.color = c; nothing)
-setcolor!(p::Labels, c::Kept{ColorSpec}) = (p.color = c; nothing)
+draw!(p::Labels, c::Canvas, t::Transform2D) = (drawlabels(p.pos, c, t, t.xscale, t.yscale, p.texts, p.color, p.fontsize, p.align); nothing)
+setcolor!(p::Lines, c::ColorSpec) = (p.color = c; nothing)
+setcolor!(p::Scatter, c::ColorSpec) = (p.color = c; nothing)
+setcolor!(p::Bars, c::ColorSpec) = (p.color = c; nothing)
+setcolor!(p::VLines, c::ColorSpec) = (p.color = c; nothing)
+setcolor!(p::Poly, c::ColorSpec) = (p.color = c; nothing)
+setcolor!(p::Labels, c::ColorSpec) = (p.color = c; nothing)
 @implement Plot Lines
 @implement Plot Scatter
 @implement Plot Bars
@@ -491,7 +501,7 @@ mutable struct Stairs
 end
 "A histogram of a sample in `bins` equal bins. Its child is a `Bars` of the counts."
 mutable struct Hist
-    values::Sample                  # Kept{Sample}
+    values::Sample
     bins::Int
     color::ColorSpec
     bars::Bars                      # the child
@@ -505,7 +515,7 @@ mutable struct Band
 end
 
 "The step points of `pos` (Makie's `stairs`), as an n × 2 matrix."
-function steppoints(pos::Opened{Positions}, step::Symbol)::Matrix{Float64}
+function steppoints(@specialize(pos::Positions), step::Symbol)::Matrix{Float64}
     n = npoints(pos)
     n == 0 && return Matrix{Float64}(undef, 0, 2)
     m = step === :center ? 2n : 2n - 1
@@ -529,7 +539,7 @@ function steppoints(pos::Opened{Positions}, step::Symbol)::Matrix{Float64}
     return out
 end
 "Bin centres and counts of a sample (an n × 2 matrix), and the bins' width."
-function binned(s::Opened{Sample}, bins::Int)::Tuple{Matrix{Float64},Float64}
+function binned(@specialize(s::Sample), bins::Int)::Tuple{Matrix{Float64},Float64}
     n = nvalues(s)
     n == 0 && return Matrix{Float64}(undef, 0, 2), 1.0
     lo, hi = Inf, -Inf
@@ -549,7 +559,7 @@ function binned(s::Opened{Sample}, bins::Int)::Tuple{Matrix{Float64},Float64}
     return out, w
 end
 "The band's outline: the lower curve, then the upper curve backwards."
-function bandoutline(lo::Opened{Positions}, up::Opened{Positions})::Matrix{Float64}
+function bandoutline(@specialize(lo::Positions), @specialize(up::Positions))::Matrix{Float64}
     n, m = npoints(lo), npoints(up)
     out = Matrix{Float64}(undef, n + m, 2)
     for i in 1:n
@@ -584,15 +594,16 @@ function refresh!(b::Band)
     p.color = b.color
     return p
 end
-datalimits(s::Stairs) = datalimits(refresh!(s))
-datalimits(h::Hist) = datalimits(refresh!(h))
-datalimits(b::Band) = datalimits(refresh!(b))
-draw!(s::Stairs, c::Canvas, t::Transform2D) = draw!(refresh!(s), c, t)
-draw!(h::Hist, c::Canvas, t::Transform2D) = draw!(refresh!(h), c, t)
-draw!(b::Band, c::Canvas, t::Transform2D) = draw!(refresh!(b), c, t)
-setcolor!(s::Stairs, c::Kept{ColorSpec}) = (s.color = c; nothing)
-setcolor!(h::Hist, c::Kept{ColorSpec}) = (h.color = c; nothing)
-setcolor!(b::Band, c::Kept{ColorSpec}) = (b.color = c; nothing)
+# the child's limits through a facts callee: its run-time site's result asserted (open issue 157)
+datalimits(s::Stairs) = datalimits(refresh!(s))::NTuple{4,Float64}
+datalimits(h::Hist) = datalimits(refresh!(h))::NTuple{4,Float64}
+datalimits(b::Band) = datalimits(refresh!(b))::NTuple{4,Float64}
+draw!(s::Stairs, c::Canvas, t::Transform2D) = (draw!(refresh!(s), c, t); nothing)
+draw!(h::Hist, c::Canvas, t::Transform2D) = (draw!(refresh!(h), c, t); nothing)
+draw!(b::Band, c::Canvas, t::Transform2D) = (draw!(refresh!(b), c, t); nothing)
+setcolor!(s::Stairs, c::ColorSpec) = (s.color = c; nothing)
+setcolor!(h::Hist, c::ColorSpec) = (h.color = c; nothing)
+setcolor!(b::Band, c::ColorSpec) = (b.color = c; nothing)
 @implement Plot Stairs
 @implement Plot Hist
 @implement Plot Band
@@ -600,8 +611,8 @@ setcolor!(b::Band, c::Kept{ColorSpec}) = (b.color = c; nothing)
 # --- figure, axes, rendering --------------------------------------------------------------------
 
 """
-An axis in a figure's grid cell (`row`, `col`): its plots, each kept with its attribute (a trait's name in a
-container: Vector{Kept{Plot}}), its scales (kept values: `identity`, `log10`, a user's), its place in the palette,
+An axis in a figure's grid cell (`row`, `col`): its plots (`Dynamic{Plot}`: compiled once), its scales (any
+member: `identity`, `log10`, a user's), its place in the palette,
 whether it draws its decorations (ticks, their labels, the grid, the axis labels), and its limits (`NaN`: from the data).
 """
 mutable struct Axis
@@ -609,7 +620,7 @@ mutable struct Axis
     title::String
     xlabel::String
     ylabel::String
-    xscale::Scale                   # Kept{Scale}
+    xscale::Scale                   # any member: identity, log10, a user's
     yscale::Scale
     row::Int
     col::Int
@@ -637,14 +648,14 @@ const PALETTE = NTuple{4,Float64}[(0 / 255, 114 / 255, 178 / 255, 1.0), (230 / 2
 "The axis's next colour of the palette."
 nextcolor!(ax::Axis) = (ax.cycled += 1; PALETTE[mod1(ax.cycled, length(PALETTE))])
 "Give plot `k` another colour, of any conforming type: a symbol, a vector, a user's gradient (one dispatch per change)."
-recolor!(ax::Axis, k::Int, c::Dynamic{ColorSpec}) = setcolor!(ax.plots[k], c)   # Dynamic unless the caller casts
+recolor!(ax::Axis, k::Int, @nospecialize(c::ColorSpec)) = setcolor!(ax.plots[k], c)   # Dynamic unless the caller casts
 
 "A figure with one linear axis."
 newfigure(width::Int, height::Int, title::String, xlabel::String, ylabel::String) =
     Figure(width, height, Axis[Axis(Plot[], title, xlabel, ylabel, identity, identity, 1, 1, 0)])
 newfigure(width::Int, height::Int, title::String) = newfigure(width, height, title, "", "")
 "Add an axis in cell (`row`, `col`) with scales of any conforming type: `Dynamic` unless the caller casts them."
-function add_axis!(f::Figure, row::Int, col::Int, xscale::Dynamic{Scale}, yscale::Dynamic{Scale}, title::String, xlabel::String, ylabel::String)
+function add_axis!(f::Figure, row::Int, col::Int, @nospecialize(xscale::Scale), @nospecialize(yscale::Scale), title::String, xlabel::String, ylabel::String)
     (row >= 1 && col >= 1) || throw(ArgumentError("a grid cell is (row, col) from (1, 1), not ($row, $col)"))
     ax = Axis(Plot[], title, xlabel, ylabel, xscale, yscale, row, col, 0)
     push!(f.axes, ax)
@@ -652,53 +663,53 @@ function add_axis!(f::Figure, row::Int, col::Int, xscale::Dynamic{Scale}, yscale
 end
 
 "Add a plot of any conforming type (a user's recipe) to the axis: `Dynamic` unless the caller casts it."
-add_plot!(ax::Axis, p::Dynamic{Plot}) = (push!(ax.plots, p); nothing)
+add_plot!(ax::Axis, @nospecialize(p::Plot)) = (push!(ax.plots, p); nothing)
 # the library's recipes, made from bounded arguments, `Dynamic` by default (compiled once) unless the
 # caller casts them; each returns the plot, kept in the axis
-function add_lines!(ax::Axis, pos::Dynamic{Positions}, color::Dynamic{ColorSpec}, linewidth::Float64)
+function add_lines!(ax::Axis, @nospecialize(pos::Positions), @nospecialize(color::ColorSpec), linewidth::Float64)
     p = Lines(pos, color, linewidth)
     push!(ax.plots, Dynamic{Plot}(p))
     return p
 end
-function add_scatter!(ax::Axis, pos::Dynamic{Positions}, color::Dynamic{ColorSpec}, markersize::Float64, marker::Dynamic{MarkerShape})
+function add_scatter!(ax::Axis, @nospecialize(pos::Positions), @nospecialize(color::ColorSpec), markersize::Float64, @nospecialize(marker::MarkerShape))
     p = Scatter(pos, color, markersize, marker)
     push!(ax.plots, Dynamic{Plot}(p))
     return p
 end
-function add_bars!(ax::Axis, pos::Dynamic{Positions}, color::Dynamic{ColorSpec}, width::Float64)
+function add_bars!(ax::Axis, @nospecialize(pos::Positions), @nospecialize(color::ColorSpec), width::Float64)
     p = Bars(pos, color, width)
     push!(ax.plots, Dynamic{Plot}(p))
     return p
 end
-function add_vlines!(ax::Axis, pos::Dynamic{Positions}, color::Dynamic{ColorSpec}, linewidth::Float64)
+function add_vlines!(ax::Axis, @nospecialize(pos::Positions), @nospecialize(color::ColorSpec), linewidth::Float64)
     p = VLines(pos, color, linewidth)
     push!(ax.plots, Dynamic{Plot}(p))
     return p
 end
-function add_poly!(ax::Axis, pos::Dynamic{Positions}, color::Dynamic{ColorSpec})
+function add_poly!(ax::Axis, @nospecialize(pos::Positions), @nospecialize(color::ColorSpec))
     p = Poly(pos, color)
     push!(ax.plots, Dynamic{Plot}(p))
     return p
 end
-function add_labels!(ax::Axis, pos::Dynamic{Positions}, texts::Vector{String}, color::Dynamic{ColorSpec}, fontsize::Float64, align::Symbol)
+function add_labels!(ax::Axis, @nospecialize(pos::Positions), texts::Vector{String}, @nospecialize(color::ColorSpec), fontsize::Float64, align::Symbol)
     p = Labels(pos, texts, color, fontsize, align)
     push!(ax.plots, Dynamic{Plot}(p))
     return p
 end
 const NOPOINTS = Matrix{Float64}(undef, 0, 2)
-function add_stairs!(ax::Axis, pos::Dynamic{Positions}, step::Symbol, color::Dynamic{ColorSpec}, linewidth::Float64)
+function add_stairs!(ax::Axis, @nospecialize(pos::Positions), step::Symbol, @nospecialize(color::ColorSpec), linewidth::Float64)
     c = color
     p = Stairs(pos, step, c, linewidth, Lines(Dynamic{Positions}(NOPOINTS), c, linewidth))
     push!(ax.plots, Dynamic{Plot}(p))
     return p
 end
-function add_hist!(ax::Axis, values::Dynamic{Sample}, bins::Int, color::Dynamic{ColorSpec})
+function add_hist!(ax::Axis, @nospecialize(values::Sample), bins::Int, @nospecialize(color::ColorSpec))
     c = color
     p = Hist(values, bins, c, Bars(Dynamic{Positions}(NOPOINTS), c, 1.0))
     push!(ax.plots, Dynamic{Plot}(p))
     return p
 end
-function add_band!(ax::Axis, lower::Dynamic{Positions}, upper::Dynamic{Positions}, color::Dynamic{ColorSpec})
+function add_band!(ax::Axis, @nospecialize(lower::Positions), @nospecialize(upper::Positions), @nospecialize(color::ColorSpec))
     c = color
     p = Band(lower, upper, c, Poly(Dynamic{Positions}(NOPOINTS), c))
     push!(ax.plots, Dynamic{Plot}(p))
