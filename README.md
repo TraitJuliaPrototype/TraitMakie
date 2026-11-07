@@ -2,6 +2,13 @@
 
 A plotting library written in the trait world: the second demonstrator that the trait world works for a real library. It has Makie's shape at a small fraction of its size: traits for data, colours, markers and plots, recipes with children, attributes that change shape after a plot is made, and live data. Cairo draws the PNGs. The library's design is `../writeup/explorations/makie-rewrite.md` (written before keys; `src/PlotCore.jl` is the keys form).
 
+## On the unified build (branch `unified`, W-104)
+
+This branch follows the design under "traits are abstract types" on Julia's unified build (`julia-unified`, branch `unified`), with TraitWorld's branch `unified`. The sections below describe the earlier build (branch `main`).
+
+- The earlier `Opened{X}` kernels take `@specialize(x::X)`, `Kept{X}` fields are fields typed `X`, `Dynamic{X}` arguments are `@nospecialize(x::X)`; plots are kept as `Dynamic{Plot}`. A kernel's result read through a field typed by a trait is asserted at the call (open issue 157). Precompile workloads are plain blocks run while the image is built.
+- Tests: 77 pass on `julia-unified`, TraitMakie and PlainPlots pixel-identical (2026-11-08, `unified` f90d152208; `experiments/unification/stack/logs/w104-slice1-TraitMakie.log`). The reference images on this branch are this build's: both libraries' renders differ from the earlier build's references by 0.1–0.9 % of pixels.
+
 ## Status (session 29, 2026-10-19)
 
 - **Step 2 is built and correct.** Nine plot types (lines, scatter, bars, vertical lines, polygons, text, and the recipes with children `stairs`, `hist`, `band`), marker shapes and per-point colours through `Dynamic`, `p.color = x` at the prompt, live data. 61 tests, five reference images, and a scripted REPL session (ten checks) pass.
