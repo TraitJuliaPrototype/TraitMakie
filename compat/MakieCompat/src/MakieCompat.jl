@@ -605,7 +605,7 @@ function _draw!(p::Plot, c::PC.Canvas, t::PC.Transform2D)
     end
     return nothing
 end
-@implement PC.Plot P where {P <: Plot} begin
+@implement PC.Plot Plot begin
     datalimits(p) = _limits(p)
     draw!(p, c, t) = _draw!(p, c, t)
     setcolor!(p, c) = (getfield(p, :attributes)[:color] = c; nothing)
@@ -649,7 +649,8 @@ include("upstream/band.jl")
 
 # a precompile workload, as an old recipe package would have one: the old-style path into the package image, the leaves,
 # and the user API with an `Observable`
-TraitWorld.@workload begin
+if ccall(:jl_generating_output, Cint, ()) == 1   # a precompile workload, run while the package image is built
+    let
     path = tempname() * ".png"
     f = TraitMakie.figure()
     p = stairs!(f, collect(1.0:5.0), [1.0, 3.0, 2.0, 4.0, 3.0]; step = :post, color = :red)
@@ -669,6 +670,7 @@ TraitWorld.@workload begin
     obs[] = Point2f[(0, 1), (2, 0)]
     save(path, fig)
     rm(path; force = true)
+    end
 end
 
 end
