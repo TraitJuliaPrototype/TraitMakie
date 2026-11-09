@@ -217,3 +217,8 @@ include("figures.jl")
         end
     end
 end
+
+# a cast or a carried attribute at a parameter no trait types has no effect (open issue 162)
+@testset "TraitMakie: no casts without effect" begin
+    @test isempty(detect_unused_casts(TraitMakie))
+end
