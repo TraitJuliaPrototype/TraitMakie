@@ -86,6 +86,9 @@ _sample(x) = x                                      # a user's type conforming t
 # `p.marker = :rect`, `p.pos = (x, y)` work at the prompt, for the library's recipes and a user's alike.
 Base.convert(::Type{ColorSpec}, x) = _color(x)
 Base.convert(::Type{MarkerShape}, x) = _marker(x)
+# a member is itself: the joint methods with Base's `convert(::Type{T}, x::T) where T`
+Base.convert(::Type{ColorSpec}, x::ColorSpec) = x
+Base.convert(::Type{MarkerShape}, x::MarkerShape) = x
 Base.convert(::Type{Positions}, xy::Tuple{AbstractVector,AbstractVector}) = _xy(xy[1], xy[2])
 Base.convert(::Type{Sample}, x::AbstractVector{<:Real}) = _sample(x)
 
