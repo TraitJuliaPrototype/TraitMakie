@@ -413,7 +413,7 @@ function drawmarkers(@specialize(m::MarkerShape), c::Canvas, xs::Vector{Float64}
     return nothing
 end
 function barlimits(@specialize(pos::Positions), w::Float64)::NTuple{4,Float64}
-    xmin, xmax, ymin, ymax = limits(pos)::NTuple{4,Float64}     # a run-time site's result, asserted (open issue 157)
+    xmin, xmax, ymin, ymax = limits(pos)
     return (xmin - w / 2, xmax + w / 2, min(ymin, 0.0), max(ymax, 0.0))
 end
 function drawbars(@specialize(pos::Positions), c::Canvas, t::Transform2D, @specialize(sx::Scale), @specialize(sy::Scale), @specialize(col::ColorSpec), w::Float64)::Nothing
@@ -426,7 +426,7 @@ function drawbars(@specialize(pos::Positions), c::Canvas, t::Transform2D, @speci
     return nothing
 end
 function vlimits(@specialize(pos::Positions))::NTuple{4,Float64}
-    xmin, xmax, _, _ = limits(pos)::NTuple{4,Float64}           # a run-time site's result, asserted (open issue 157)
+    xmin, xmax, _, _ = limits(pos)
     return (xmin, xmax, Inf, -Inf)                  # no extent in y
 end
 function drawvlines(@specialize(pos::Positions), c::Canvas, t::Transform2D, @specialize(sx::Scale), @specialize(col::ColorSpec), lw::Float64)::Nothing
@@ -443,14 +443,15 @@ function drawlabels(@specialize(pos::Positions), c::Canvas, t::Transform2D, @spe
     return nothing
 end
 
-# the kernels compile per type of the stored values (`@specialize`): one dispatch per call, then code per type
-# a kernel's result through the barrier at a field typed by a trait: asserted (open issue 157)
-datalimits(p::Lines) = limits(p.pos)::NTuple{4,Float64}
-datalimits(p::Scatter) = limits(p.pos)::NTuple{4,Float64}
-datalimits(p::Bars) = barlimits(p.pos, p.width)::NTuple{4,Float64}
-datalimits(p::VLines) = vlimits(p.pos)::NTuple{4,Float64}
-datalimits(p::Poly) = limits(p.pos)::NTuple{4,Float64}
-datalimits(p::Labels) = limits(p.pos)::NTuple{4,Float64}
+# the kernels compile per type of the stored values (`@specialize`): one dispatch per call, then code per type.
+# A kernel is the module's own function, owner-only (traits §12.2): its call at the field's trait is a fact,
+# typed by the kernel's result (facts §3)
+datalimits(p::Lines) = limits(p.pos)
+datalimits(p::Scatter) = limits(p.pos)
+datalimits(p::Bars) = barlimits(p.pos, p.width)
+datalimits(p::VLines) = vlimits(p.pos)
+datalimits(p::Poly) = limits(p.pos)
+datalimits(p::Labels) = limits(p.pos)
 function draw!(p::Lines, c::Canvas, t::Transform2D)
     xs, ys = pixels(p.pos, t, t.xscale, t.yscale)
     cols = colors(p.color, length(xs))
@@ -594,10 +595,10 @@ function refresh!(b::Band)
     p.color = b.color
     return p
 end
-# the child's limits through a facts callee: its run-time site's result asserted (open issue 157)
-datalimits(s::Stairs) = datalimits(refresh!(s))::NTuple{4,Float64}
-datalimits(h::Hist) = datalimits(refresh!(h))::NTuple{4,Float64}
-datalimits(b::Band) = datalimits(refresh!(b))::NTuple{4,Float64}
+# the child's limits: a call at the child's concrete type
+datalimits(s::Stairs) = datalimits(refresh!(s))
+datalimits(h::Hist) = datalimits(refresh!(h))
+datalimits(b::Band) = datalimits(refresh!(b))
 draw!(s::Stairs, c::Canvas, t::Transform2D) = (draw!(refresh!(s), c, t); nothing)
 draw!(h::Hist, c::Canvas, t::Transform2D) = (draw!(refresh!(h), c, t); nothing)
 draw!(b::Band, c::Canvas, t::Transform2D) = (draw!(refresh!(b), c, t); nothing)
