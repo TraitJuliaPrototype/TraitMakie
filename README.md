@@ -1,135 +1,44 @@
 # TraitMakie
 
-A plotting library written in the trait world: the second demonstrator that the trait world works for a real library. It has Makie's shape at a small fraction of its size: traits for data, colours, markers and plots, recipes with children, attributes that change shape after a plot is made, and live data. Cairo draws the PNGs. The library's design is `../writeup/explorations/makie-rewrite.md` (written before keys; `src/PlotCore.jl` is the keys form).
+A plotting library written with traits, with Makie's shape at a small fraction of its size. Data, colours, markers, scales and plots are traits; recipes have children; an attribute can change shape after a plot is made; data can be live. Cairo draws the PNGs. It is the plotting core under the port of GraphMakie, through its compatibility layer.
 
-## On the unified build (branch `unified`, W-104)
+## The package
 
-This branch follows the design under "traits are abstract types" on Julia's unified build (`julia-unified`, branch `unified`), with TraitWorld's branch `unified`. The sections below describe the earlier build (branch `main`).
+- **`PlotCore`** (`src/PlotCore.jl`, `src/colormaps.jl`): the trait module (`@trait_module`).
+  - Traits: `Positions` (points by index), `Sample` (values a histogram bins), `ColorSpec` (a colour, or one per point), `Colormap` (a colour for each value in [0, 1]), `MarkerShape` (an outline per point), `Scale` (an axis's scale and its ticks), `Plot` (a recipe: `datalimits`, `draw!`, `setcolor!`).
+  - Members: `Matrix{Float64}` (n × 2), `Vector{NTuple{2,Float64}}` and any vector of 2-vectors as positions; `Vector{<:Real}` as a sample; `ColorName`, an RGBA tuple, a vector of either, and `MappedColors` (numbers through a colormap and a range) as colours; `ColormapName` and a vector of RGBA stops as colormaps; `MarkerName` and `Vector{MarkerName}` as markers; `typeof(identity)` and `typeof(log10)` as scales.
+  - Plots: the primitives `Lines`, `Scatter`, `Bars`, `VLines`, `Poly`, `Labels`; the recipes with children `Stairs`, `Hist`, `Band`, which rebuild their children from their own data and attributes at each render.
+  - A figure with axes in a grid of equal cells; each axis keeps its plots and its scales, and draws limits, ticks, labels and a title.
+- **`TraitMakie`** (`src/TraitMakie.jl`): the ordinary layer. `lines`, `scatter`, `barplot`, `hist`, `vlines!`, `stairs`, `band`, `poly`, `text!`, `plot!`, `figure`, `recolor!`, `save`; upstream Makie's user API for figures with axes (`Figure`, `fig[r, c]`, `Axis`, `lines!`, `scatter!`, `linesegments!`, `hidedecorations!`, `limits!`); names checked where they are given, with messages that list the choices; `p.color = x` translated at the attribute's trait; `Live` (members of `Positions` and `Sample` by forwarding to `val`) and `onchange`. Its module `OldAPI` holds the names of the old recipe API.
+- **`compat/MakieCompat`, `compat/MakieCompatStats`:** the old Makie recipe API and its statistics recipes above the core, plain code; a package written against Makie (GraphMakie) runs with `using Makie` read as `using MakieCompat`. See `compat/MakieCompat/README.md`.
+- **`baselines/PlainPlots`:** the control without traits, with the same algorithms, canvas, interface and features. `baselines/MakieCompatPlain`: the compatibility layer's control.
 
-- The earlier `Opened{X}` kernels take `@specialize(x::X)`, `Kept{X}` fields are fields typed `X`, `Dynamic{X}` arguments are `@nospecialize(x::X)`; plots are kept as `Dynamic{Plot}`. A kernel's result read through a field typed by a trait is asserted at the call (open issue 157). Precompile workloads are plain blocks run while the image is built.
-- Tests: 77 pass on `julia-unified`, TraitMakie and PlainPlots pixel-identical (2026-11-08, `unified` f90d152208; `experiments/implementation/stack/logs/w104-slice1-TraitMakie.log`). The reference images on this branch are this build's: both libraries' renders differ from the earlier build's references by 0.1–0.9 % of pixels.
+## How it uses the design
 
-## Status (session 29, 2026-10-19)
-
-- **Step 2 is built and correct.** Nine plot types (lines, scatter, bars, vertical lines, polygons, text, and the recipes with children `stairs`, `hist`, `band`), marker shapes and per-point colours through `Dynamic`, `p.color = x` at the prompt, live data. 61 tests, five reference images, and a scripted REPL session (ten checks) pass.
-- **The control is equivalent.** PlainPlots has every feature, and draws the same pixels for all five reference figures.
-- **Built on the facts+traits compiler:** julia-1.13 61852d8fb1 with TraitWorld 375a930. Julia's compiler compiles the trait modules by facts, and `Dynamic` operations are call-site splits (part D). The tests and the REPL session pass there.
-- **Measured in session 29** (the build of 2026-10-19), in fresh processes, one run per load order: "Measured in session 29" below, this file's dated results. **The current numbers** are in the design repository's [`../writeup/design/evidence.md`](../writeup/design/evidence.md) §1 and §3, from the measurement round of 2026-10-20 (julia-1.13 3b8085c222, TraitWorld bed3782, 2 runs per load order).
-- The other numbers in this file are from sessions 23–27, under TraitWorld's prototype policy: history, before the facts compiler.
-
-## What a user sees at the prompt
-
-The user's criterion: interactivity as the user perceives it. A slow import followed by instant plots is fine. A warning that teaches counts as a win.
-
-- **Plots, then changes.** `f = lines(x, y)`, `p = scatter!(f, x, z)`, then `p.color = :red`, `p.color = [(r, g, b, a), …]`, `p.marker = :diamond`, `p.pos = (x, w)`, `h.bins = 12`, `s.step = :center`. Each change shows at the next `save`. A colour or marker changes shape (a symbol, a vector, a user's type) where Makie 0.24.16 fails (`makie-rewrite.md` §1).
-- **New types at the prompt.** A data type in one line (`@implement Positions Track`), a colour or marker of the user's own (one method and `@implement`), a recipe of the user's own made of the library's recipes (`plot!(fig, Lollipop(x, y))`).
-- **Live data.** `lv = Live(data)`, `lines(lv)`, `lv[] = newdata`: the plot reads the current value at each render; `onchange(_ -> save(path, fig), lv)` redraws on every change. A user's own mutable type works the same way (`Sensor`, in the tests).
-- **Mistakes teach.** `p.color = :magenta` raises "unknown colour :magenta. The named colours are :black, :blue, … ; a colour may also be an RGB or RGBA tuple, a vector of colours (one per point), or a value of a type conforming to ColorSpec", and the plot keeps its colour. Unknown markers, steps, alignments and bin counts are refused the same way. A value of no conforming type is refused at the bound ("a String does not conform to ColorSpec"). Earlier (session 27, row 8): bad data refused at the entry naming the bound, a wrong colour result refused at `@implement`, an undeclared operation in a user's recipe reported at its definition.
-- **Earlier timings** (session 27, prototype policy, script mode): `using TraitMakie` 0.24–0.28 s, then the first PNG in 18–22 ms in every load order; a new data or colour type 0.10–0.23 s for the implementation and 50–130 ms for its first PNG. Under the criterion that is instant after a cheap import. (D) is built; the rows have not been measured at the REPL since. In fresh processes: "Measured in session 29", and the current numbers in [`../writeup/design/evidence.md`](../writeup/design/evidence.md) §3.
-
-## Scope: what is in the tree
-
-- **`src/PlotCore.jl`, the trait module.**
-  - Traits: `Positions` (points by index), `Sample` (values a histogram bins), `ColorSpec` (a colour per point), `Colormap` (a colour for each value in [0, 1]), `MarkerShape` (an outline per point), `Scale` (an axis's scale: `scaled`, `scaleticks`, `ticklabel`), `Plot` (a recipe: `datalimits`, `draw!`, `setcolor!`).
-  - Implementations: `Matrix{Float64}` (n × 2), `Vector{NTuple{2,Float64}}` and any vector of 2-vectors (GeometryBasics' `Point2f`, without the dependency) as positions; `MappedColors` (numbers through a colormap and a range: upstream's `color`, `colormap`, `colorrange`) as colours; `ColormapName` (`:viridis`, `:plasma`, `:inferno`, `:magma`, `:balance`, ColorSchemes' stops in `src/colormaps.jl`) and a vector of RGBA stops as colormaps; `Vector{<:Real}` as a sample; `ColorName` (a named colour, checked when it is made), an RGBA tuple, a vector of either as colours; `MarkerName` and `Vector{MarkerName}` as markers (`:circle`, `:rect`, `:diamond`, `:utriangle`, `:cross`). `typeof(identity)` and `typeof(log10)` as scales. `Symbol` conforms to neither colour nor marker: the ordinary layer translates a name to a `ColorName` or `MarkerName`, at a keyword and at an assignment (`p.color = :red`), so an unknown name is refused where it is given.
-  - Primitives: `Lines` (a colour per point drawn segment by segment), `Scatter`, `Bars`, `VLines`, `Poly`, `Labels`.
-  - Recipes with children: `Stairs` (a `Lines`), `Hist` (a `Bars`), `Band` (a `Poly`).
-  - A figure with axes in a grid of equal cells; each axis keeps its scales (kept values), and draws limits, ticks and tick labels by its scales (powers of ten on a log axis), a title and axis labels; Makie's palette (`wong_colors`), each axis's place in it; an axis's decorations hidden and its limits fixed (what lies outside is cut off); Cairo called directly, scaled by `px_per_unit`.
-- **`src/TraitMakie.jl`, the ordinary layer.** `lines`, `scatter`, `barplot`, `hist`, `vlines!`, `stairs`, `band`, `poly`, `text!`, `plot!`, `figure`, `recolor!`, `save`; upstream Makie's user API for figures with axes (`Figure(; size)`, `fig[r, c]`, `Axis(fig[r, c]; xscale, yscale)`, `lines!`, `scatter!` (with `colormap`, `colorrange`), `linesegments!` and `plot!` on an axis, `hidedecorations!`, `limits!`, the colour cycled when not given, `save(path, fig; px_per_unit)`: E-168's plotting calls run unchanged, W-70); checked names; attributes translated at their bounds; `Live` and `onchange`; the precompile workload over every recipe.
-- **`baselines/PlainPlots`, the control.** The same algorithms, canvas, interface and features without traits: a plot is a kind and a `Dict{Symbol, Any}` of attributes (read and set as properties), an axis holds `Vector{Any}` plots, and each drawing loop runs behind a function barrier.
-- **`test/`.** `runtests.jl` (77 tests: a user's data type, colour, marker, scale, live source and recipe with children; attribute changes; refused names; upstream's user API), `figures.jl` (the five reference figures, drawn by either library), `references/*.png`.
-- **`scripts/`.** `session.jl` and `session.sh` (the REPL session), `rows.jl`, `baseline.jl` and `errors.jl` (the session 26–27 rows), `env/` (an environment with both libraries).
-
-Not in the tree, though `makie-rewrite.md` §9 plans them: a `Coords` trait per argument, `Layoutable` (blocks other than `Axis`) and GridLayoutBase's solver (the grid's cells are equal, the margins fixed), `AxisValues` (dates, units, categories), a `Backend` trait (Cairo is the one backend, called directly), a typed compute graph (`Node{T}`), a `UserPlots` package (the user's types live in the tests and the session).
-
-## How it is built
-
-- Data, colours, markers and plots are traits. A plot keeps its data, colour and marker with their attribute: `Lines.color::ColorSpec` in a trait module means `Kept{ColorSpec}`. The recipes declare `Dynamic` as the default on their bounds (`add_lines!(f, pos::Dynamic{Positions}, …)`), so a plot is compiled once unless the caller casts its data with `compiled_for`. An axis keeps its plots as `Vector{Plot}`, that is `Vector{Kept{Plot}}`.
-- The loops over data are bounded functions (`pixels(pos::Opened{Positions}, t, sx::Opened{Scale}, sy::Opened{Scale})`, `drawmarkers(m::MarkerShape, …)`, `binned(s::Sample, bins)`), compiled per key: the plots hold their data as `Dynamic` fields and pass them with `compiled_for`.
-- **Attributes are fields.** `p.color = x` is Julia's `setproperty!`, which converts `x` to the field's type. The ordinary layer defines that conversion for its traits' `Dynamic` types: the boundary's translation at the bound, after the names are checked. So assignment from the prompt is an entry (`makie-rewrite.md` §8 item 7, settled).
-- **Recipes with children** keep their own data and attributes, and rebuild their children from them before each use (`refresh!`). A child therefore follows the parent's attributes and a live source. The recompute is unconditional; a typed compute graph that skips it when nothing changed is an optimization, not needed for correctness.
-- **Live data needs no new mechanism.** A `Live` value conforms by forwarding to its `val` field, and a trait object reads the user's object at its offsets, so every render sees the current value. The notification is ordinary code. This settles `makie-rewrite.md` §8 item 3 for pull-based updates: no `Live{X}` bound modifier is needed. What it does not give: a derived value cached between renders and invalidated by the source (that is the compute graph).
-- `lines(x, y)` converts `x, y` explicitly into one n × 2 matrix the bounds take (no bound spans several arguments).
-
-## Rows
-
-"Shown" is correctness, session 29. "Earlier" is a measurement under TraitWorld's prototype policy (sessions 23–27; `scripts/rows.jl`, `scripts/baseline.jl`, single runs, script mode, see git history of this file for the full table). After the review of 2026-10-18 (`../writeup/reviews/2026-10-18-implementation-shape.md` §5), rows 1–3 measure the facts mode, a property of the compiler, until the control runs PlainPlots under `--compile-by-facts=all`.
-
-| # | What | Shown (session 29) | Earlier (prototype policy) | Whose property |
-|---|---|---|---|---|
-| 1 | first PNG after `using` | the session's first PNG | `using` 0.24–0.28 s; first PNG 18–22 ms in every load order (s27) | the compiler's (facts mode) |
-| 2 | load-order independence | — | 18.7–19.3 ms after CSV, DataFrames, CairoMakie; PlainPlots 99.5–101 ms (s27) | the compiler's, until the control |
-| 3 | compiled code lost to loads | — | 0 over twelve loads (`g2all`, s24, s27) | the compiler's |
-| 4 | a new data type, colour, marker, recipe | all four at the prompt (tests, session) | implementation 0.10–0.23 s, first PNG 50–130 ms; 6.4 s after big loads without the system image (s27) | the checks are traits'; the 6.4 s was the prototype's |
-| 5 | dispatch targets | — | not measured: `verify_main` does not reach workers in a session | traits' (declared targets) |
-| 6 | attribute shapes change | colour: symbol, tuple, vector of symbols or tuples, user's type; marker: symbol, vector, user's type; data, bins, step | colour changes 9–112 ms (s27) | traits' (`Dynamic`) |
-| 7 | trimmed binary | — | 4.07 MB, PNG byte-identical, `--trim=unsafe-warn` (s25, step 1's library) | traits' (target lists) |
-| 8 | errors that teach | unknown names list the choices; a non-conforming value names the bound | bad data at the entry naming the bound; a wrong `rgba` at `@implement`; an undeclared operation at the recipe's definition (s27, `scripts/errors.jl`) | traits' (checks) and the ordinary layer's |
-| 9 | run time of dynamic data | — | 10⁵-point line 97–99 ms per drawing, PlainPlots 97–102 ms: Cairo's stroke (s27) | — |
-| 10 | precompile, image size, load | — | 4.6 s, 5.0 MB, 0.28 s (s27, before step 2) | — |
-| 11 | recipes with children | `Stairs`, `Hist`, `Band`; a user's `Ribbon` and `Lollipop` | — | traits' (`Plot` over children) |
-| 12 | live data | `Live` replaced, a user's `Sensor` mutated in place, `onchange` redraws | — | the reference layout |
-| 13 | PNGs against references and the control | five figures pixel-identical to PlainPlots and to `test/references` | — | correctness |
-
-The "Earlier" column is history, before the facts compiler. The session-29 numbers are in "Measured in session 29".
-
-## Measured in session 29
-
-A dated table: julia-1.13 61852d8fb1, TraitWorld 375a930 (the build of 2026-10-19), the patched build. `scripts/rows.jl`, fresh processes, *n = 1* per load order; big loads = CSV, DataFrames, CairoMakie. One machine, shared with other jobs. The current numbers, from the round of 2026-10-20: [`../writeup/design/evidence.md`](../writeup/design/evidence.md) §3.
-
-| Row | No loads | Loads before | Loads after |
-|---|---|---|---|
-| `using TraitMakie` | 476 ms | 538 ms | 474 ms |
-| first PNG | 20.5 ms | 20.9 ms | 20.8 ms |
-| a new data type (forwarding): `@implement` / first PNG | 77 / 107 ms | 97 / 89 ms | 96 / 161 ms |
-| a new colour type: `@implement` / first PNG | 171 / 96 ms | 311 / 98 ms | 159 / 101 ms |
-| render / recolour to a vector / to `:purple` / to a gradient | 8.8 / 102 / 9.0 / 18 ms | 8.8 / 84 / 9.0 / 18 ms | 9.0 / 231 / 8.6 / 19 ms |
-
-- At the start of the phase: a new data type after the loads took 5.5 s and 2.1 s.
-- **A clean-case regression:** the forwarding `@implement` took 36 ms and its PNG 40 ms before the phase; probably the cost of compiling TraitWorld's machinery by facts, not yet measured by owner. Gone in the round of 2026-10-20 (julia-1.13 3b8085c222, TraitWorld bed3782), through the machinery's code in TraitWorld's image (TraitWorld f7aea19): see [`../writeup/design/evidence.md`](../writeup/design/evidence.md) §3.
-- These rows are rows 1, 2, 4 and 6 of the table above, in script mode, not at the REPL.
-
-**The control: whose property is load protection** (session 29; the round's numbers are in `evidence.md` §1). The same work, then nine unrelated packages loaded (OffsetArrays, StatsBase, Unitful, IntervalArithmetic, Distributions, Interpolations, StaticArrays, CairoMakie, REPL), plain mode against `--compile-by-facts=all`:
-
-| | plain mode | `all` |
-|---|---|---|
-| PlainTables + TraitMakie: CodeInstances lost | 14 of 218 | **0 of 206** |
-| their work after the loads (repeated: 27.5 / 27.8 ms) | 96.1 ms | 29.4 ms |
-
-- Load protection is the facts rule's property, for any code, not traits'.
-- The 14 lost in plain mode are PlainTables'; TraitMakie lost none (session note `../session-notes/2026-10-18-29-reviews-and-decisions.md`). The control ran PlainTables, not PlainPlots.
-
-**Not measured yet** (at the REPL, `scripts/session.jl` as the driver; patched build):
-- Every row at the REPL: the rows above ran in fresh processes.
-- Row 4 for a marker and a user recipe defined at the prompt, and PlainPlots' one-method equivalents.
-- Row 6 for the other attribute changes (marker, data, bins, step) and their next render.
-- A live update and its redraw (row 12).
-- The steady state of every recipe, against PlainPlots (row 9), including a 10⁵-value `hist` whose child is rebuilt at each render.
-- Compiled code lost per load, TraitMakie against PlainPlots under `all` (rows 2, 3).
-- Precompile time, image size and load time with the larger workload (row 10).
-- `verify_main` and a trimmed binary of the step 2 library, `--trim=safe` (rows 5, 7). The 4.07 MB binary of row 7 (session 25) was not rebuilt on the current compiler.
-- Diagnosis of the forwarding type's first PNG, still above the 40 ms measured before the phase (the design repository's work queue, W-7; numbers in `evidence.md` §3).
-
-## 2026-10-29: what GraphMakie needs (E-240, W-32 R2)
-
-TraitMakie b68d97a, julia-1.13 bfca89decc, TraitWorld ca92f22. The census of R1 (`../writeup/plans/2026-10-29-ndport-r1-census.md`, items 6, 8, 10) asked the core for vectors of GeometryBasics' points, colours by number through a colormap, hidden decorations and fixed limits; the old API's leaves and Observables are MakieCompat's (`compat/MakieCompat/README.md`).
-- `Pkg.test()`: 77 tests pass, the reference images unchanged (`../experiments/x3/logs/traitmakie-suite-r2.log`).
-- X3's checks of slices 1–5 and the plotting session: 51 PNGs byte-equal to a run before the change (`../experiments/x3/logs/check-r2-regression.log`).
-- GraphMakie's step f and g plots on the ports: colours as handed to the core equal CairoMakie's (`numbers_to_colors`) to 1/255 (`../ndport/README.md`, E-240).
-
-## 2026-10-29: the REPL session's recipe step
-
-TraitMakie 1af318c, julia-1.13 00dcc9994c, TraitWorld 33dd55e (`../experiments/checks/logs/lollipop/`).
-- `scripts/session.sh`: 10 of 10 checks ok; one error at the prompt, the one marked `# ERROR expected` (`:magenta`).
-- From 04ce30f to c0d5c36 the session's `Lollipop` defined `setcolor!` at `Dynamic{ColorSpec}`, while the `Plot` trait declares `Kept{ColorSpec}`. `@implement Plot Lollipop` was refused, rightly, and three checks never printed; the script passed on its last check. It now passes only when every `_ok` call prints ok and only the marked errors show (`makie-session-before-fix.log` shows the old session failing it).
-
-## What TraitWorld should provide
-
-Found while building step 2; TraitMakie works around it without touching the machinery.
-- **Forwarding for a whole family.** `@implement Positions Live{T} by val where {T}` is not supported ("forwarding for the whole family: not yet", `TraitWorld/test/like.jl:78`), so `Live` declares one implementation per parameter value (four).
+- No trait erases by default (no `@default_dynamic`). An axis keeps its plots boxed, `Dynamic{Plot}`, so a plot's drawing is compiled once; a recipe with children boxes its child's data, `Dynamic{Positions}`.
+- The drawing loops (`pixels`, `colors`, `drawmarkers`, `binned`, …) take `@specialize` at their trait arguments and are compiled per type of the data; the doors (`add_lines!`, `add_scatter!`, …, `recolor!`) take `@nospecialize` at theirs. A field typed by a trait (`pos::Positions`) holds a member or a box, as given.
+- Not yet on the design's one way to erase: the tests call `detect_unused_casts` and `detect_kept_storage` (`test/runtests.jl`), and the REPL session's recipe declares `setcolor!` at `Kept{ColorSpec}` (`scripts/session.jl`). This is recorded as deviation T-128 of the traits reference.
 
 ## Running
 
-- Tests: `julia --project=. -e 'using Pkg; Pkg.test()'`. `TRAITMAKIE_UPDATE_REFERENCES=1` rewrites `test/references/`.
-- The REPL session: `scripts/session.sh`.
-- On the shared machine: one Julia job at a time, niced, under the shared lock.
+From the workspace root:
+
+```sh
+source env.sh
+julia-next/julia --project=TraitMakie -e 'using Pkg; Pkg.test()'
+```
+
+- `TRAITMAKIE_UPDATE_REFERENCES=1` rewrites the reference images in `test/references/`. `test/figures.jl` draws the five reference figures with either library.
+- The REPL session, a scripted session at a real prompt: `JULIA=$PWD/julia-next/julia TraitMakie/scripts/session.sh`. Its default Julia is another tree, so set `JULIA`.
+- `scripts/rows.jl`, `scripts/baseline.jl`, `scripts/errors.jl`: the timing rows of `HISTORY.md`; `scripts/env/` holds an environment with both libraries.
+
+## Results
+
+The current numbers, each against plain Julia or Python, are in the design repository's `writeup/design/evidence.md`. The suite's last result is in its `writeup/state.md` §3; on `julia-next` the suite has 8 testsets.
+
+- Tests: 77 pass on `julia-unified`, TraitMakie and PlainPlots pixel-identical (2026-11-08, `unified` f90d152208; `experiments/implementation/stack/logs/w104-slice1-TraitMakie.log`). The reference images on this branch are this build's: both libraries' renders differ from the earlier build's references by 0.1–0.9 % of pixels.
+
+## The design
+
+- The design: the design repository's `writeup/reference/` (traits, facts, compiler, lowering).
+- The lessons of the ports: `writeup/intro/porting.md`.
