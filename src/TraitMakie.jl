@@ -237,7 +237,7 @@ Base.show(io::IO, l::Live) = (print(io, "Live("); show(io, l.val); print(io, ")"
 # a precompile workload, run while the package image is built: every recipe, the library's own colour
 # and marker types on each, an attribute changed after the plot was made, and live data, into a
 # temporary file
-if ccall(:jl_generating_output, Cint, ()) == 1
+if Base.generating_output(true)
     let
     xs = collect(range(0.0, 2pi; length = 50))
     path = tempname() * ".png"
