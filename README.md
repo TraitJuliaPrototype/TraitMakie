@@ -7,7 +7,7 @@ A plotting library written in the trait world: the second demonstrator that the 
 This branch follows the design under "traits are abstract types" on Julia's unified build (`julia-unified`, branch `unified`), with TraitWorld's branch `unified`. The sections below describe the earlier build (branch `main`).
 
 - The earlier `Opened{X}` kernels take `@specialize(x::X)`, `Kept{X}` fields are fields typed `X`, `Dynamic{X}` arguments are `@nospecialize(x::X)`; plots are kept as `Dynamic{Plot}`. A kernel's result read through a field typed by a trait is asserted at the call (open issue 157). Precompile workloads are plain blocks run while the image is built.
-- Tests: 77 pass on `julia-unified`, TraitMakie and PlainPlots pixel-identical (2026-11-08, `unified` f90d152208; `experiments/unification/stack/logs/w104-slice1-TraitMakie.log`). The reference images on this branch are this build's: both libraries' renders differ from the earlier build's references by 0.1–0.9 % of pixels.
+- Tests: 77 pass on `julia-unified`, TraitMakie and PlainPlots pixel-identical (2026-11-08, `unified` f90d152208; `experiments/implementation/stack/logs/w104-slice1-TraitMakie.log`). The reference images on this branch are this build's: both libraries' renders differ from the earlier build's references by 0.1–0.9 % of pixels.
 
 ## Status (session 29, 2026-10-19)
 
