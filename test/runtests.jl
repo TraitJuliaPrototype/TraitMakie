@@ -1,5 +1,4 @@
 using Test, TraitMakie, TraitWorld
-using TraitWorld.ByType: compiled_for       # the wrapper, a value (traits §7.6; the library's export is still the cast: T-126)
 import PlainPlots
 const PC = TraitMakie.PlotCore
 const Cairo = PC.Cairo

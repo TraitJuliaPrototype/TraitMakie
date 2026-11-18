@@ -17,7 +17,6 @@ A plotting library written with traits, with Makie's shape at a small fraction o
 
 - No trait erases by default (no `@default_dynamic`). An axis keeps the library's plots boxed, `Dynamic{Plot}`, so a plot's drawing is compiled once; a recipe with children boxes its child's data, `Dynamic{Positions}`.
 - The drawing loops (`pixels`, `colors`, `drawmarkers`, `binned`, …) take `@specialize` at their trait arguments and are compiled per type of the data; the doors (`add_lines!`, `add_scatter!`, …, `recolor!`) take `@nospecialize` at theirs and are compiled once. A field typed by a trait (`pos::Positions`) keeps what it is given: a member, a box or a wrapper (the tests' "storage keeps the form given").
-- The tests bind the wrapper's function with `using TraitWorld.ByType: compiled_for` (`test/runtests.jl`): the library's exported `compiled_for` is still Julia's cast (deviation T-126 of the traits reference).
 
 ## Running
 
