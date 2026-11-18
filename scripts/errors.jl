@@ -25,12 +25,11 @@ report("1. bad data", () -> TraitMakie.lines!(f, "not data"))
 struct RGB3; r::Float64; g::Float64; b::Float64; end
 TraitMakie.rgba(c::RGB3, i::Int) = (c.r, c.g, c.b)
 report("2. a wrong colour result", () -> @eval @implement ColorSpec RGB3)
-# at the prompt the definition check warns (at a package's build it is an error); the call raises
-io = IOBuffer()
-using Logging
-with_logger(SimpleLogger(io)) do
-    @eval @trait_module module MyRecipes
+# the definition check refuses the method where it is defined (in a script as at a package's build; at the
+# prompt it warns): the module's evaluation raises
+report("3. an undeclared operation in a recipe", () -> @eval module MyRecipes
         using TraitWorld, TraitMakie
+        @trait_module
         using TraitMakie.PlotCore: Canvas, Transform2D
         export Dots
         mutable struct Dots; pos::Positions; end
@@ -39,11 +38,4 @@ with_logger(SimpleLogger(io)) do
         TraitMakie.PlotCore.draw!(d::Dots, c::Canvas, t::Transform2D) = (count_points(d.pos); nothing)
         TraitMakie.PlotCore.setcolor!(d::Dots, c::ColorSpec) = nothing
         @implement Plot Dots
-    end
-end
-w = split(String(take!(io)), '\n')
-println(rpad("3. an undeclared operation in a recipe", 40), " at its definition, a warning of ", count(!isempty, w), " lines:")
-println("    ", join(filter(l -> occursin("length", l), w), " "))
-g = TraitMakie.figure()
-push!(g.axes[1].plots, Dynamic{TraitMakie.Plot}(MyRecipes.Dots(Dynamic{Positions}([1.0 2.0; 3.0 4.0]))))
-report("   and at the first call", () -> TraitMakie.save(tempname() * ".png", g))
+    end)
