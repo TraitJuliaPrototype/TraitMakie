@@ -16,7 +16,7 @@ A plotting library written with traits, with Makie's shape at a small fraction o
 ## How it uses the design
 
 - No trait erases by default (no `@default_dynamic`). An axis keeps the library's plots boxed, `Dynamic{Plot}`, so a plot's drawing is compiled once; a recipe with children boxes its child's data, `Dynamic{Positions}`.
-- The drawing loops (`pixels`, `colors`, `drawmarkers`, `binned`, …) take `@specialize` at their trait arguments and are compiled per type of the data; the doors (`add_lines!`, `add_scatter!`, …, `recolor!`) take `@nospecialize` at theirs and are compiled once. A field typed by a trait (`pos::Positions`) keeps what it is given: a member, a box or a wrapper (the tests' "storage keeps the form given").
+- The drawing loops (`pixels`, `colors`, `drawmarkers`, `binned`, …) take `@specialize` at their trait arguments and are compiled per type of the data; the doors (`add_lines!`, `add_scatter!`, …, `recolor!`) take `@nospecialize` at theirs, with `Base.@nospecializeinfer` so that a caller that knows the data's type does not infer the door again for it, and are compiled once. A field typed by a trait (`pos::Positions`) keeps what it is given: a member, a box or a wrapper (the tests' "storage keeps the form given").
 
 ## Running
 

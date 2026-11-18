@@ -649,14 +649,14 @@ const PALETTE = NTuple{4,Float64}[(0 / 255, 114 / 255, 178 / 255, 1.0), (230 / 2
 "The axis's next colour of the palette."
 nextcolor!(ax::Axis) = (ax.cycled += 1; PALETTE[mod1(ax.cycled, length(PALETTE))])
 "Give plot `k` another colour, of any conforming type: a symbol, a vector, a user's gradient (one dispatch per change)."
-recolor!(ax::Axis, k::Int, @nospecialize(c::ColorSpec)) = setcolor!(ax.plots[k], c)   # compiled once; the colour passed as given
+Base.@nospecializeinfer recolor!(ax::Axis, k::Int, @nospecialize(c::ColorSpec)) = setcolor!(ax.plots[k], c)   # compiled once; the colour passed as given
 
 "A figure with one linear axis."
 newfigure(width::Int, height::Int, title::String, xlabel::String, ylabel::String) =
     Figure(width, height, Axis[Axis(Plot[], title, xlabel, ylabel, identity, identity, 1, 1, 0)])
 newfigure(width::Int, height::Int, title::String) = newfigure(width, height, title, "", "")
 "Add an axis in cell (`row`, `col`) with scales of any conforming type, kept as given (the door compiled once, `@nospecialize`)."
-function add_axis!(f::Figure, row::Int, col::Int, @nospecialize(xscale::Scale), @nospecialize(yscale::Scale), title::String, xlabel::String, ylabel::String)
+Base.@nospecializeinfer function add_axis!(f::Figure, row::Int, col::Int, @nospecialize(xscale::Scale), @nospecialize(yscale::Scale), title::String, xlabel::String, ylabel::String)
     (row >= 1 && col >= 1) || throw(ArgumentError("a grid cell is (row, col) from (1, 1), not ($row, $col)"))
     ax = Axis(Plot[], title, xlabel, ylabel, xscale, yscale, row, col, 0)
     push!(f.axes, ax)
@@ -664,53 +664,53 @@ function add_axis!(f::Figure, row::Int, col::Int, @nospecialize(xscale::Scale), 
 end
 
 "Add a plot of any conforming type (a user's recipe) to the axis, kept as given (the door compiled once, `@nospecialize`)."
-add_plot!(ax::Axis, @nospecialize(p::Plot)) = (push!(ax.plots, p); nothing)
+Base.@nospecializeinfer add_plot!(ax::Axis, @nospecialize(p::Plot)) = (push!(ax.plots, p); nothing)
 # the library's recipes, made from arguments each door takes `@nospecialize` (compiled once): each keeps its
 # plot in the axis as a box, `Dynamic{Plot}`, and returns the plot
-function add_lines!(ax::Axis, @nospecialize(pos::Positions), @nospecialize(color::ColorSpec), linewidth::Float64)
+Base.@nospecializeinfer function add_lines!(ax::Axis, @nospecialize(pos::Positions), @nospecialize(color::ColorSpec), linewidth::Float64)
     p = Lines(pos, color, linewidth)
     push!(ax.plots, Dynamic{Plot}(p))
     return p
 end
-function add_scatter!(ax::Axis, @nospecialize(pos::Positions), @nospecialize(color::ColorSpec), markersize::Float64, @nospecialize(marker::MarkerShape))
+Base.@nospecializeinfer function add_scatter!(ax::Axis, @nospecialize(pos::Positions), @nospecialize(color::ColorSpec), markersize::Float64, @nospecialize(marker::MarkerShape))
     p = Scatter(pos, color, markersize, marker)
     push!(ax.plots, Dynamic{Plot}(p))
     return p
 end
-function add_bars!(ax::Axis, @nospecialize(pos::Positions), @nospecialize(color::ColorSpec), width::Float64)
+Base.@nospecializeinfer function add_bars!(ax::Axis, @nospecialize(pos::Positions), @nospecialize(color::ColorSpec), width::Float64)
     p = Bars(pos, color, width)
     push!(ax.plots, Dynamic{Plot}(p))
     return p
 end
-function add_vlines!(ax::Axis, @nospecialize(pos::Positions), @nospecialize(color::ColorSpec), linewidth::Float64)
+Base.@nospecializeinfer function add_vlines!(ax::Axis, @nospecialize(pos::Positions), @nospecialize(color::ColorSpec), linewidth::Float64)
     p = VLines(pos, color, linewidth)
     push!(ax.plots, Dynamic{Plot}(p))
     return p
 end
-function add_poly!(ax::Axis, @nospecialize(pos::Positions), @nospecialize(color::ColorSpec))
+Base.@nospecializeinfer function add_poly!(ax::Axis, @nospecialize(pos::Positions), @nospecialize(color::ColorSpec))
     p = Poly(pos, color)
     push!(ax.plots, Dynamic{Plot}(p))
     return p
 end
-function add_labels!(ax::Axis, @nospecialize(pos::Positions), texts::Vector{String}, @nospecialize(color::ColorSpec), fontsize::Float64, align::Symbol)
+Base.@nospecializeinfer function add_labels!(ax::Axis, @nospecialize(pos::Positions), texts::Vector{String}, @nospecialize(color::ColorSpec), fontsize::Float64, align::Symbol)
     p = Labels(pos, texts, color, fontsize, align)
     push!(ax.plots, Dynamic{Plot}(p))
     return p
 end
 const NOPOINTS = Matrix{Float64}(undef, 0, 2)
-function add_stairs!(ax::Axis, @nospecialize(pos::Positions), step::Symbol, @nospecialize(color::ColorSpec), linewidth::Float64)
+Base.@nospecializeinfer function add_stairs!(ax::Axis, @nospecialize(pos::Positions), step::Symbol, @nospecialize(color::ColorSpec), linewidth::Float64)
     c = color
     p = Stairs(pos, step, c, linewidth, Lines(Dynamic{Positions}(NOPOINTS), c, linewidth))
     push!(ax.plots, Dynamic{Plot}(p))
     return p
 end
-function add_hist!(ax::Axis, @nospecialize(values::Sample), bins::Int, @nospecialize(color::ColorSpec))
+Base.@nospecializeinfer function add_hist!(ax::Axis, @nospecialize(values::Sample), bins::Int, @nospecialize(color::ColorSpec))
     c = color
     p = Hist(values, bins, c, Bars(Dynamic{Positions}(NOPOINTS), c, 1.0))
     push!(ax.plots, Dynamic{Plot}(p))
     return p
 end
-function add_band!(ax::Axis, @nospecialize(lower::Positions), @nospecialize(upper::Positions), @nospecialize(color::ColorSpec))
+Base.@nospecializeinfer function add_band!(ax::Axis, @nospecialize(lower::Positions), @nospecialize(upper::Positions), @nospecialize(color::ColorSpec))
     c = color
     p = Band(lower, upper, c, Poly(Dynamic{Positions}(NOPOINTS), c))
     push!(ax.plots, Dynamic{Plot}(p))
