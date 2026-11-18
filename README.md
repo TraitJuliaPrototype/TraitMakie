@@ -15,9 +15,9 @@ A plotting library written with traits, with Makie's shape at a small fraction o
 
 ## How it uses the design
 
-- No trait erases by default (no `@default_dynamic`). An axis keeps its plots boxed, `Dynamic{Plot}`, so a plot's drawing is compiled once; a recipe with children boxes its child's data, `Dynamic{Positions}`.
-- The drawing loops (`pixels`, `colors`, `drawmarkers`, `binned`, …) take `@specialize` at their trait arguments and are compiled per type of the data; the doors (`add_lines!`, `add_scatter!`, …, `recolor!`) take `@nospecialize` at theirs. A field typed by a trait (`pos::Positions`) holds a member or a box, as given.
-- Not yet on the design's one way to erase: the tests call `detect_unused_casts` and `detect_kept_storage` (`test/runtests.jl`), and the REPL session's recipe declares `setcolor!` at `Kept{ColorSpec}` (`scripts/session.jl`). This is recorded as deviation T-128 of the traits reference.
+- No trait erases by default (no `@default_dynamic`). An axis keeps the library's plots boxed, `Dynamic{Plot}`, so a plot's drawing is compiled once; a recipe with children boxes its child's data, `Dynamic{Positions}`.
+- The drawing loops (`pixels`, `colors`, `drawmarkers`, `binned`, …) take `@specialize` at their trait arguments and are compiled per type of the data; the doors (`add_lines!`, `add_scatter!`, …, `recolor!`) take `@nospecialize` at theirs and are compiled once. A field typed by a trait (`pos::Positions`) keeps what it is given: a member, a box or a wrapper (the tests' "storage keeps the form given").
+- The tests bind the wrapper's function with `using TraitWorld.ByType: compiled_for` (`test/runtests.jl`): the library's exported `compiled_for` is still Julia's cast (deviation T-126 of the traits reference).
 
 ## Running
 
@@ -37,6 +37,7 @@ julia-next/julia --project=TraitMakie -e 'using Pkg; Pkg.test()'
 The current numbers, each against plain Julia or Python, are in the design repository's `writeup/design/evidence.md`. The suite's last result is in its `writeup/state.md` §3; on `julia-next` the suite has 8 testsets.
 
 - Tests: 77 pass on `julia-unified`, TraitMakie and PlainPlots pixel-identical (2026-11-08, `unified` f90d152208; `experiments/implementation/stack/logs/w104-slice1-TraitMakie.log`). The reference images on this branch are this build's: both libraries' renders differ from the earlier build's references by 0.1–0.9 % of pixels.
+- On `julia-next`: the suite's 8 testsets pass; the REPL session 10 of 10 checks ok, with the one expected error (2026-11-18, `next` 02139b2168, TraitWorld 3e64ede; `experiments/implementation/w156/logs/after-makie.log`, `after-makie-session.log`). `scripts/errors.jl` stops at its third case on the build, before and after this branch alike: the library's `@trait_module` takes options only, not `@trait_module module MyRecipes … end` (`experiments/implementation/w156/logs/makie-errors-after.log`).
 
 ## The design
 

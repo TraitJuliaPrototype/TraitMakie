@@ -37,7 +37,7 @@ function TraitMakie.datalimits(l::Lollipop)
     return (min(a[1], b[1]), max(a[2], b[2]), min(a[3], b[3]), max(a[4], b[4]))
 end
 TraitMakie.PlotCore.draw!(l::Lollipop, c::TraitMakie.PlotCore.Canvas, t::TraitMakie.PlotCore.Transform2D) = (TraitMakie.PlotCore.draw!(l.stems, c, t); TraitMakie.PlotCore.draw!(l.tips, c, t))
-TraitMakie.PlotCore.setcolor!(l::Lollipop, c::Kept{ColorSpec}) = (l.tips.color = c; nothing)
+TraitMakie.PlotCore.setcolor!(l::Lollipop, c::ColorSpec) = (l.tips.color = c; nothing)
 @implement Plot Lollipop
 g = figure(; title = "lollipops")
 lp = plot!(g, Lollipop([1.0, 2.0, 3.0], [2.0, -1.0, 3.0]))

@@ -1,4 +1,5 @@
 using Test, TraitMakie, TraitWorld
+using TraitWorld.ByType: compiled_for       # the wrapper, a value (traits §7.6; the library's export is still the cast: T-126)
 import PlainPlots
 const PC = TraitMakie.PlotCore
 const Cairo = PC.Cairo
@@ -218,8 +219,16 @@ include("figures.jl")
     end
 end
 
-# a cast or a carried attribute at a parameter no trait types has no effect (open issue 162)
-@testset "TraitMakie: no casts without effect" begin
-    @test isempty(detect_unused_casts(TraitMakie))
-    @test isempty(detect_kept_storage(TraitMakie.PlotCore))     # no `keep` into storage typed by a trait (traits §7.8)
+# storage keeps the form it is given (traits §8): an axis keeps the library's plots as boxes; a plot's field typed by
+# a trait holds a plain member, a box or a wrapper as given, and the plot draws the same from each
+@testset "TraitMakie: storage keeps the form given" begin
+    f = figure()
+    p = lines!(f, [0.0, 1.0], [0.0, 2.0])
+    @test f.axes[1].plots[1] isa Dynamic{Plot}
+    m = [0.0 0.0; 1.0 3.0]
+    for (pos, F) in ((m, Matrix{Float64}), (Dynamic{Positions}(m), Dynamic{Positions}), (compiled_for(m), Compiled{Matrix{Float64}}))
+        p.pos = pos
+        @test p.pos isa F && datalim(f, 1) == (0.0, 1.0, 0.0, 3.0)
+        @test isfile(save(png("forms"), f))
+    end
 end

@@ -649,13 +649,13 @@ const PALETTE = NTuple{4,Float64}[(0 / 255, 114 / 255, 178 / 255, 1.0), (230 / 2
 "The axis's next colour of the palette."
 nextcolor!(ax::Axis) = (ax.cycled += 1; PALETTE[mod1(ax.cycled, length(PALETTE))])
 "Give plot `k` another colour, of any conforming type: a symbol, a vector, a user's gradient (one dispatch per change)."
-recolor!(ax::Axis, k::Int, @nospecialize(c::ColorSpec)) = setcolor!(ax.plots[k], c)   # Dynamic unless the caller casts
+recolor!(ax::Axis, k::Int, @nospecialize(c::ColorSpec)) = setcolor!(ax.plots[k], c)   # compiled once; the colour passed as given
 
 "A figure with one linear axis."
 newfigure(width::Int, height::Int, title::String, xlabel::String, ylabel::String) =
     Figure(width, height, Axis[Axis(Plot[], title, xlabel, ylabel, identity, identity, 1, 1, 0)])
 newfigure(width::Int, height::Int, title::String) = newfigure(width, height, title, "", "")
-"Add an axis in cell (`row`, `col`) with scales of any conforming type: `Dynamic` unless the caller casts them."
+"Add an axis in cell (`row`, `col`) with scales of any conforming type, kept as given (the door compiled once, `@nospecialize`)."
 function add_axis!(f::Figure, row::Int, col::Int, @nospecialize(xscale::Scale), @nospecialize(yscale::Scale), title::String, xlabel::String, ylabel::String)
     (row >= 1 && col >= 1) || throw(ArgumentError("a grid cell is (row, col) from (1, 1), not ($row, $col)"))
     ax = Axis(Plot[], title, xlabel, ylabel, xscale, yscale, row, col, 0)
@@ -663,10 +663,10 @@ function add_axis!(f::Figure, row::Int, col::Int, @nospecialize(xscale::Scale), 
     return ax
 end
 
-"Add a plot of any conforming type (a user's recipe) to the axis: `Dynamic` unless the caller casts it."
+"Add a plot of any conforming type (a user's recipe) to the axis, kept as given (the door compiled once, `@nospecialize`)."
 add_plot!(ax::Axis, @nospecialize(p::Plot)) = (push!(ax.plots, p); nothing)
-# the library's recipes, made from bounded arguments, `Dynamic` by default (compiled once) unless the
-# caller casts them; each returns the plot, kept in the axis
+# the library's recipes, made from arguments each door takes `@nospecialize` (compiled once): each keeps its
+# plot in the axis as a box, `Dynamic{Plot}`, and returns the plot
 function add_lines!(ax::Axis, @nospecialize(pos::Positions), @nospecialize(color::ColorSpec), linewidth::Float64)
     p = Lines(pos, color, linewidth)
     push!(ax.plots, Dynamic{Plot}(p))

@@ -37,7 +37,7 @@ with_logger(SimpleLogger(io)) do
         TraitMakie.PlotCore.datalimits(d::Dots) = (0.0, 1.0, 0.0, 1.0)
         count_points(p::Positions) = length(p)                # `length` is no operation of Positions
         TraitMakie.PlotCore.draw!(d::Dots, c::Canvas, t::Transform2D) = (count_points(d.pos); nothing)
-        TraitMakie.PlotCore.setcolor!(d::Dots, c::Dynamic{ColorSpec}) = nothing
+        TraitMakie.PlotCore.setcolor!(d::Dots, c::ColorSpec) = nothing
         @implement Plot Dots
     end
 end
